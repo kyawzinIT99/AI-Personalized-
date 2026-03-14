@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+
+  <title>Clawbot — AI Operations Agent · itsolutions.mm</title>
+  <meta name="description" content="Clawbot is the 24/7 AI operations agent for Kyaw Zin at itsolutions.mm — handling email, calendar, Telegram, LINE, Google Drive, tasks and more." />
+  <meta name="author" content="itsolutions.mm" />
+  <meta name="theme-color" content="#0d0d0f" />
+
+  <!-- Open Graph — social sharing preview -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:title"       content="Clawbot 🦞 — AI Operations Agent" />
+  <meta property="og:description" content="Kyaw Zin's 24/7 AI agent at itsolutions.mm. Email · Calendar · Telegram · LINE · Google Drive · Tasks." />
+  <meta property="og:site_name"   content="Clawbot · itsolutions.mm" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="summary" />
+  <meta name="twitter:title"       content="Clawbot 🦞 — AI Operations Agent" />
+  <meta name="twitter:description" content="24/7 AI agent by itsolutions.mm — Email, Calendar, Telegram, LINE, Drive, Tasks." />
+
+  <!-- Favicon (inline SVG as data URI) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>" />
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+
+    <!-- ── MOBILE HEADER (visible on phones only) ── -->
+    <header class="mobile-header">
+      <div class="mobile-brand">
+        <span class="mobile-brand-icon">🦞</span>
+        <div class="mobile-brand-text">
+          <span class="mobile-brand-name">Clawbot</span>
+          <span class="mobile-brand-sub">itsolutions.mm</span>
+        </div>
+      </div>
+      <div class="mobile-status">
+        <span class="status-dot" id="statusDotMobile"></span>
+        <span class="mobile-model-badge">GPT-4o</span>
+      </div>
+    </header>
+
+    <!-- ── SIDEBAR (desktop only) ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-icon">🦞</span>
+        <div>
+          <div class="brand-name">Clawbot</div>
+          <div class="brand-sub">itsolutions.mm</div>
+        </div>
+      </div>
+
+      <div class="sidebar-status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-view="chat">
+          <span class="nav-icon">💬</span>
+          <span class="nav-label">Chat</span>
+        </button>
+        <button class="nav-btn" data-view="tasks">
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">Tasks</span>
+          <span class="nav-badge" id="taskBadge">0</span>
+        </button>
+        <button class="nav-btn" data-view="log">
+          <span class="nav-icon">📡</span>
+          <span class="nav-label">Activity</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-actions">
+        <button class="action-btn green"  id="autoStartBtn">▶ Auto Mode</button>
+        <button class="action-btn red"    id="autoStopBtn">⏹ Stop Auto</button>
+        <button class="action-btn ghost"  id="resetBtn">↺ Reset Tasks</button>
+        <button class="action-btn ghost"  id="clearChatBtn">🗑 Clear Chat</button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="footer-row">
+          <span class="footer-label">Model</span>
+          <span class="footer-value">GPT-4o</span>
+        </div>
+        <div class="footer-row footer-brand-row">
+          <span class="footer-copy">© itsolutions.mm</span>
+          <span class="footer-agent">Kyaw Zin</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── MAIN ── -->
+    <main class="main">
+
+      <!-- CHAT VIEW -->
+      <div class="view active" id="view-chat">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-welcome">
+            <div class="welcome-glow"></div>
+            <div class="welcome-icon">🦞</div>
+            <div class="welcome-title">Clawbot is ready</div>
+            <div class="welcome-sub">Your 24/7 AI operations agent — email, calendar, messaging, files, tasks.</div>
+            <div class="welcome-powered">Powered by GPT-4o · itsolutions.mm</div>
+            <div class="welcome-suggestions">
+              <button class="suggestion" data-msg="Check my email today">📧 Check email</button>
+              <button class="suggestion" data-msg="What's on my calendar today?">📅 Calendar</button>
+              <button class="suggestion" data-msg="Show all task status">📋 Task status</button>
+              <button class="suggestion" data-msg="Generate end-of-day report">📄 EOD report</button>
+              <button class="suggestion" data-msg="Start auto mode and run all tasks">▶ Auto mode</button>
+              <button class="suggestion" data-msg="Check Telegram messages">💬 Telegram</button>
+              <button class="suggestion" data-msg="Check LINE messages">💚 LINE</button>
+              <button class="suggestion" data-msg="Show my recent Drive files">📁 Drive</button>
+              <button class="suggestion" data-msg="Send Facebook message">📘 Facebook</button>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <div class="chat-input-row">
+            <textarea id="chatInput" placeholder="Message Clawbot…" rows="1"></textarea>
+            <button id="sendBtn" class="send-btn" title="Send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+          <div class="chat-footer-note">Clawbot · GPT-4o · itsolutions.mm · Kyaw Zin</div>
+        </div>
+      </div>
+
+      <!-- TASKS VIEW -->
+      <div class="view" id="view-tasks">
+        <div class="view-header">
+          <h2>Task Board</h2>
+          <div class="task-summary" id="taskSummary">—</div>
+        </div>
+        <div class="task-groups" id="taskGroups"></div>
+      </div>
+
+      <!-- LOG VIEW -->
+      <div class="view" id="view-log">
+        <div class="view-header">
+          <h2>Activity Log</h2>
+          <button class="hdr-btn" id="clearLogBtn">Clear</button>
+        </div>
+        <div class="log-list" id="logList"></div>
+      </div>
+
+    </main>
+
+    <!-- ── MOBILE BOTTOM NAV ── -->
+    <nav class="mobile-nav">
+      <button class="mobile-nav-btn active" data-view="chat">
+        <span class="mnav-icon">💬</span>
+        <span class="mnav-label">Chat</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="tasks">
+        <span class="mnav-icon">📋</span>
+        <span class="mnav-label">Tasks</span>
+        <span class="mnav-badge" id="taskBadgeMobile">0</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="log">
+        <span class="mnav-icon">📡</span>
+        <span class="mnav-label">Activity</span>
+      </button>
+      <button class="mobile-nav-btn" id="mobileMenuBtn" data-view="menu">
+        <span class="mnav-icon">⚙️</span>
+        <span class="mnav-label">Actions</span>
+      </button>
+    </nav>
+
+    <!-- MOBILE ACTIONS SHEET -->
+    <div class="mobile-sheet" id="mobileSheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Actions</div>
+      <div class="sheet-actions">
+        <button class="sheet-btn green" id="autoStartBtnM">▶ Start Auto Mode</button>
+        <button class="sheet-btn red"   id="autoStopBtnM">⏹ Stop Auto Mode</button>
+        <button class="sheet-btn ghost" id="resetBtnM">↺ Reset All Tasks</button>
+        <button class="sheet-btn ghost" id="clearChatBtnM">🗑 Clear Chat</button>
+      </div>
+      <button class="sheet-close" id="sheetClose">Close</button>
+    </div>
+    <div class="sheet-overlay" id="sheetOverlay"></div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

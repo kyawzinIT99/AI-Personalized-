@@ -1,0 +1,16 @@
+# ── SENSITIVE CONFIG (never commit — contains real API keys & tokens) ──
+*.config.json
+auth.config.json
+google_user_token.json
+gcpkyawzin*.json
+client_secret_*.json
+
+# ── DEPENDENCIES ──
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── SYSTEM ──
+.DS_Store
+*.log
