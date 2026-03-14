@@ -19,6 +19,8 @@ const crypto             = require('crypto');
 const OpenAI             = require('openai');
 const QRCode             = require('qrcode');
 const { Client: NotionClient } = require('@notionhq/client');
+const multer                   = require('multer');
+const { Readable }             = require('stream');
 
 // ── NOTION DIRECT API ───────────────────────────────────────────
 let notionCfg = {};
@@ -2144,6 +2146,47 @@ app.post('/api/telegram/webhook', (req, res) => {
 });
 
 app.get('/api/telegram/contacts', (_req, res) => res.json({ contacts: Object.values(tgContacts) }));
+
+// ── GOOGLE DRIVE FILE UPLOAD ─────────────────────────────────────
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }); // 50 MB max
+
+app.post('/api/drive/upload', upload.single('file'), async (req, res) => {
+  const drive = getDriveClient();
+  if (!drive) return res.status(503).json({ ok: false, error: 'Google Drive not configured' });
+  if (!req.file) return res.status(400).json({ ok: false, error: 'No file received' });
+
+  const { originalname, mimetype, buffer } = req.file;
+  const folder = req.body.folder || null; // optional: target folder name
+
+  try {
+    const meta = { name: originalname };
+    // If folder name given, find its ID
+    if (folder) {
+      const fRes = await drive.files.list({
+        q: `name = '${folder.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id)', pageSize: 1,
+        includeItemsFromAllDrives: true, supportsAllDrives: true
+      });
+      const f = fRes.data.files?.[0];
+      if (f) meta.parents = [f.id];
+    }
+
+    const stream = Readable.from(buffer);
+    const created = await drive.files.create({
+      requestBody: meta,
+      media: { mimeType: mimetype, body: stream },
+      fields: 'id,name,webViewLink,size',
+      supportsAllDrives: true
+    });
+
+    const { id, name, webViewLink } = created.data;
+    addLog(`📤 File uploaded to Drive: "${name}"${folder ? ` → ${folder}` : ''}`, 'task');
+    broadcast('drive_upload', { name, id, url: webViewLink, folder, ts: new Date().toISOString() });
+    res.json({ ok: true, name, id, url: webViewLink, folder });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 app.get('/api/telegram/ai-status', (_req, res) => {
   const cfg = loadOpenAIConfig();

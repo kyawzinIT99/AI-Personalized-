@@ -264,6 +264,16 @@ textarea { font-family: inherit; font-size: inherit; color: inherit; }
   line-height: 1.6; padding: 4px 0; font-size: 14px;
 }
 #chatInput::placeholder { color: var(--text3); }
+.attach-btn {
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
+  background: var(--bg4); color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.attach-btn:hover  { background: rgba(124,58,237,0.15); color: var(--accent3); }
+.attach-btn:active { transform: scale(0.94); }
+
 .send-btn {
   width: 38px; height: 38px; border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--accent), var(--accent2));

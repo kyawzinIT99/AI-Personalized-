@@ -255,6 +255,38 @@ chatInput.addEventListener('keydown', (e) => {
 });
 chatInput.addEventListener('input', autoResize);
 
+// ── FILE UPLOAD TO DRIVE ────────────────────────────────────────
+const attachBtn = document.getElementById('attachBtn');
+const fileInput = document.getElementById('fileInput');
+
+attachBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async () => {
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+  fileInput.value = '';
+
+  for (const file of files) {
+    appendUser(`📎 Uploading "${file.name}"…`);
+    showThinking();
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res  = await apiFetch('/api/drive/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      removeThinking();
+      if (data.ok) {
+        appendAssistant(`✅ "${data.name}" uploaded to Google Drive.\n🔗 ${data.url}`);
+      } else {
+        appendAssistant(`❌ Upload failed: ${data.error}`);
+      }
+    } catch {
+      removeThinking();
+      appendAssistant('❌ Upload error. Is the server running?');
+    }
+  }
+});
+
 function autoResize() {
   chatInput.style.height = 'auto';
   chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
