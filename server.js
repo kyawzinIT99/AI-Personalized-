@@ -1377,6 +1377,21 @@ const CLAWBOT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'create_drive_folder',
+      description: 'Create a new folder in Google Drive. Optionally place it inside an existing parent folder.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name:          { type: 'string', description: 'Folder name to create e.g. "ClawBot"' },
+          parent_folder: { type: 'string', description: 'Optional: name of an existing parent folder to create this inside' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_google_sheet',
       description: 'Create a new Google Sheet with a title and optional header columns, then return the URL to open it',
       parameters: {
@@ -1842,6 +1857,31 @@ async function executeClawbotTool(toolName, args) {
           addLog(`🗑️ Drive file deleted: "${f.name}"`, 'task');
         }
         return { ok: true, deleted, count: deleted.length };
+      }
+
+      case 'create_drive_folder': {
+        const drive = getDriveClient();
+        if (!drive) return { error: 'Google Drive not configured' };
+        const { name: folderName, parent_folder } = args;
+        const meta = { name: folderName, mimeType: 'application/vnd.google-apps.folder' };
+        // If parent folder specified, find its ID first
+        if (parent_folder) {
+          const pRes = await drive.files.list({
+            q: `name = '${parent_folder.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: 'files(id,name)', pageSize: 1,
+            includeItemsFromAllDrives: true, supportsAllDrives: true
+          });
+          const parent = pRes.data.files?.[0];
+          if (parent) meta.parents = [parent.id];
+        }
+        const created = await drive.files.create({
+          requestBody: meta,
+          fields: 'id,name,webViewLink',
+          supportsAllDrives: true
+        });
+        const { id, name: createdName, webViewLink } = created.data;
+        addLog(`📁 Drive folder created: "${createdName}"`, 'task');
+        return { ok: true, name: createdName, id, url: webViewLink };
       }
 
       case 'create_google_sheet': {
