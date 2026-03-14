@@ -1379,6 +1379,36 @@ const CLAWBOT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'move_drive_file',
+      description: 'Move a file in Google Drive to a different folder. Finds the file by name and moves it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename:      { type: 'string', description: 'Name of the file to move e.g. "KPAY.jpg"' },
+          target_folder: { type: 'string', description: 'Name of the destination folder e.g. "ClawBot Folder"' }
+        },
+        required: ['filename', 'target_folder']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'copy_drive_file',
+      description: 'Copy a file in Google Drive into a different folder, keeping the original in place.',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename:      { type: 'string', description: 'Name of the file to copy e.g. "KPAY.jpg"' },
+          target_folder: { type: 'string', description: 'Name of the destination folder e.g. "ClawBot Folder"' }
+        },
+        required: ['filename', 'target_folder']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_drive_folder',
       description: 'Create a new folder in Google Drive. Optionally place it inside an existing parent folder.',
       parameters: {
@@ -1859,6 +1889,55 @@ async function executeClawbotTool(toolName, args) {
           addLog(`🗑️ Drive file deleted: "${f.name}"`, 'task');
         }
         return { ok: true, deleted, count: deleted.length };
+      }
+
+      case 'move_drive_file':
+      case 'copy_drive_file': {
+        const drive = getDriveClient();
+        if (!drive) return { error: 'Google Drive not configured' };
+        const { filename, target_folder } = args;
+        const isCopy = toolName === 'copy_drive_file';
+
+        // Find the file
+        const fRes = await drive.files.list({
+          q: `name contains '${filename.replace(/'/g,"\\'")}' and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id,name,parents)', pageSize: 5,
+          includeItemsFromAllDrives: true, supportsAllDrives: true, orderBy: 'modifiedTime desc'
+        });
+        const file = fRes.data.files?.[0];
+        if (!file) return { ok: false, error: `File "${filename}" not found in Drive` };
+
+        // Find the target folder
+        const dRes = await drive.files.list({
+          q: `name contains '${target_folder.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id,name)', pageSize: 5,
+          includeItemsFromAllDrives: true, supportsAllDrives: true
+        });
+        const folder = dRes.data.files?.[0];
+        if (!folder) return { ok: false, error: `Folder "${target_folder}" not found in Drive` };
+
+        let resultLink;
+        if (isCopy) {
+          const copied = await drive.files.copy({
+            fileId: file.id,
+            requestBody: { name: file.name, parents: [folder.id] },
+            fields: 'id,name,webViewLink', supportsAllDrives: true
+          });
+          resultLink = copied.data.webViewLink;
+          addLog(`📋 Drive file copied: "${file.name}" → "${folder.name}"`, 'task');
+        } else {
+          const oldParents = (file.parents || []).join(',');
+          const moved = await drive.files.update({
+            fileId: file.id,
+            addParents: folder.id,
+            removeParents: oldParents,
+            fields: 'id,name,webViewLink', supportsAllDrives: true,
+            requestBody: {}
+          });
+          resultLink = moved.data.webViewLink;
+          addLog(`📁 Drive file moved: "${file.name}" → "${folder.name}"`, 'task');
+        }
+        return { ok: true, filename: file.name, folder: folder.name, url: resultLink, action: isCopy ? 'copied' : 'moved' };
       }
 
       case 'create_drive_folder': {
