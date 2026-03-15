@@ -996,6 +996,51 @@ function loadSlackConfig() {
   } catch (_) { return null; }
 }
 
+const SLACK_CFG_PATH = path.join(__dirname, 'slack.config.json');
+
+// Auto-refresh Slack rotating token using clientId + clientSecret + refreshToken
+async function refreshSlackToken() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(SLACK_CFG_PATH, 'utf8'));
+    if (!cfg.clientId || !cfg.clientSecret || !cfg.refreshToken) return null;
+    const params = new URLSearchParams({
+      grant_type:    'refresh_token',
+      client_id:     cfg.clientId,
+      client_secret: cfg.clientSecret,
+      refresh_token: cfg.refreshToken
+    });
+    const res  = await fetch('https://slack.com/api/oauth.v2.access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    const data = await res.json();
+    if (!data.ok) { addLog(`⚠️ Slack token refresh failed: ${data.error}`, 'off'); return null; }
+    // Save new tokens back to config
+    cfg.botToken     = data.authed_user?.access_token || data.access_token || cfg.botToken;
+    if (data.refresh_token) cfg.refreshToken = data.refresh_token;
+    fs.writeFileSync(SLACK_CFG_PATH, JSON.stringify(cfg, null, 2));
+    addLog('🔑 Slack token auto-refreshed', 'on');
+    return cfg.botToken;
+  } catch (e) { addLog(`⚠️ Slack refresh error: ${e.message}`, 'off'); return null; }
+}
+
+// Slack API call with auto-retry on token expiry
+async function slackCall(endpoint, options, retried = false) {
+  const cfg = loadSlackConfig();
+  if (!cfg) return { ok: false, error: 'Slack not configured' };
+  const res  = await fetch(`https://slack.com/api/${endpoint}`, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${cfg.botToken}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+  });
+  const data = await res.json();
+  if (!data.ok && (data.error === 'token_expired' || data.error === 'invalid_auth') && !retried) {
+    const newToken = await refreshSlackToken();
+    if (newToken) return slackCall(endpoint, options, true);
+  }
+  return data;
+}
+
 const tgOutbox = [];
 
 function telegramPost(botToken, payload) {
@@ -1967,12 +2012,9 @@ async function executeClawbotTool(toolName, args) {
         if (!slackCfg) return { ok: false, error: 'Slack not configured. Add token to slack.config.json.' };
         const channelId = args.channel || slackCfg.defaultChannelId;
         if (!channelId) return { ok: false, error: 'No channel specified and no defaultChannelId in slack.config.json.' };
-        const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${slackCfg.botToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channel: channelId, text: args.message })
+        const slackData = await slackCall('chat.postMessage', {
+          method: 'POST', body: JSON.stringify({ channel: channelId, text: args.message })
         });
-        const slackData = await slackRes.json();
         if (!slackData.ok) return { ok: false, error: slackData.error };
         addLog(`💬 Slack message sent to ${channelId}`, 'task');
         return { ok: true, channel: channelId, ts: slackData.ts };
@@ -1983,10 +2025,7 @@ async function executeClawbotTool(toolName, args) {
         if (!slackCfg) return { ok: false, error: 'Slack not configured.' };
         const channelId = args.channel || slackCfg.defaultChannelId;
         const limit = args.limit || 10;
-        const slackRes = await fetch(`https://slack.com/api/conversations.history?channel=${channelId}&limit=${limit}`, {
-          headers: { 'Authorization': `Bearer ${slackCfg.botToken}` }
-        });
-        const slackData = await slackRes.json();
+        const slackData = await slackCall(`conversations.history?channel=${channelId}&limit=${limit}`, { method: 'GET' });
         if (!slackData.ok) return { ok: false, error: slackData.error };
         const messages = slackData.messages.map(m => ({
           text: m.text, ts: new Date(parseFloat(m.ts) * 1000).toISOString(), user: m.user || m.bot_id || 'unknown'
