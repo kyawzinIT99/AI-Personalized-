@@ -31,6 +31,15 @@ function getNotionClient() {
   return new NotionClient({ auth: notionCfg.apiKey });
 }
 
+// ── FIRECRAWL CONFIG ────────────────────────────────────────────
+let firecrawlCfg = {};
+try { firecrawlCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'firecrawl.config.json'), 'utf8')); } catch {}
+
+function getFirecrawlKey() {
+  if (!firecrawlCfg.apiKey || firecrawlCfg.apiKey.startsWith('PASTE_')) return null;
+  return firecrawlCfg.apiKey;
+}
+
 // ── FACEBOOK MESSENGER DIRECT API ──────────────────────────────
 let fbCfg = {};
 try { fbCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'facebook.config.json'), 'utf8')); } catch {}
@@ -1456,6 +1465,23 @@ const CLAWBOT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'search_jobs',
+      description: 'Search for jobs on LinkedIn and Upwork using Firecrawl. Returns job listings with fit scores, salary, tech stack, and contact info.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query:     { type: 'string', description: 'Job search query, e.g. "Node.js developer", "AI engineer", "network engineer"' },
+          job_type:  { type: 'string', enum: ['remote', 'permanent', 'both'], description: 'Type of job' },
+          platforms: { type: 'string', enum: ['linkedin', 'upwork', 'both'], description: 'Platforms to search' },
+          limit:     { type: 'number', description: 'Max results to return (default 6)' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'rename_drive_file',
       description: 'Rename a file or folder in Google Drive',
       parameters: {
@@ -2138,6 +2164,47 @@ async function executeClawbotTool(toolName, args) {
         } catch (e) {
           return { ok: false, error: `Notion API error: ${e.message}` };
         }
+      }
+
+      case 'search_jobs': {
+        const fcKey = getFirecrawlKey();
+        if (!fcKey) return { ok: false, error: 'Firecrawl not configured. Add API key to firecrawl.config.json.' };
+        const aiCfg = loadOpenAIConfig();
+        const { query, job_type = 'both', platforms = 'both', limit = 6 } = args;
+        try {
+          const searches = [];
+          const typeFilter = job_type === 'remote' ? ' remote' : job_type === 'permanent' ? ' full-time onsite' : '';
+          if (platforms === 'linkedin' || platforms === 'both') searches.push(`site:linkedin.com/jobs ${query}${typeFilter}`);
+          if (platforms === 'upwork' || platforms === 'both') searches.push(`site:upwork.com ${query}${typeFilter} jobs`);
+          if (!searches.length) searches.push(`${query}${typeFilter} job listing`);
+
+          const rawResults = [];
+          for (const sq of searches) {
+            const fcRes = await fetch('https://api.firecrawl.dev/v1/search', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${fcKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: sq, limit: 5 })
+            });
+            const fcData = await fcRes.json();
+            if (fcData.success && fcData.data) {
+              rawResults.push(...fcData.data.map(r => ({ ...r, _platform: sq.includes('linkedin') ? 'LinkedIn' : sq.includes('upwork') ? 'Upwork' : 'Web' })));
+            }
+          }
+          if (!rawResults.length) return { ok: true, jobs: [], message: 'No results from Firecrawl' };
+
+          const oa = new OpenAI({ apiKey: aiCfg.apiKey });
+          const gptRes = await oa.chat.completions.create({
+            model: aiCfg.model || 'gpt-4o',
+            messages: [{ role: 'user', content: `Extract job data and score (0-100 fit for "${query}") from:\n${rawResults.slice(0,8).map((r,i)=>`JOB ${i+1} [${r._platform}]\nURL:${r.url}\n${(r.markdown||r.description||'').slice(0,600)}`).join('\n\n')}\n\nReturn JSON array: [{title,company,salary,location,type,platform,tech_stack,contact,apply_url,fit_score,summary}]. JSON only.` }],
+            temperature: 0.2
+          });
+          const txt = gptRes.choices[0].message.content.trim();
+          let jobs = [];
+          try { jobs = JSON.parse(txt.startsWith('[') ? txt : txt.slice(txt.indexOf('['))); } catch {}
+          jobs.sort((a,b) => (b.fit_score||0)-(a.fit_score||0));
+          addLog(`🔍 Job search: "${query}" → ${jobs.length} results`, 'task');
+          return { ok: true, count: jobs.length, jobs: jobs.slice(0, limit) };
+        } catch (e) { return { ok: false, error: e.message }; }
       }
 
       case 'delete_drive_file': {
@@ -3273,6 +3340,97 @@ app.post('/api/shutdown', (_req, res) => {
     console.log('\n[Clawbot] Shutdown by user. Will NOT restart automatically.\n');
     process.exit(0);
   }, 1500);
+});
+
+// ── JOB SEARCH API ─────────────────────────────────────────────
+app.post('/api/jobs/search', async (req, res) => {
+  const { query, jobType = 'both', platforms = 'both', limit = 6 } = req.body;
+  if (!query) return res.status(400).json({ ok: false, error: 'query required' });
+
+  const fcKey = getFirecrawlKey();
+  if (!fcKey) return res.status(503).json({ ok: false, error: 'Firecrawl not configured. Add API key to firecrawl.config.json.' });
+
+  const aiCfg = loadOpenAIConfig();
+  if (!aiCfg) return res.status(503).json({ ok: false, error: 'OpenAI not configured' });
+
+  try {
+    const searches = [];
+    const typeFilter = jobType === 'remote' ? ' remote' : jobType === 'permanent' ? ' full-time onsite' : '';
+
+    if (platforms === 'linkedin' || platforms === 'both') {
+      searches.push(`site:linkedin.com/jobs ${query}${typeFilter}`);
+    }
+    if (platforms === 'upwork' || platforms === 'both') {
+      searches.push(`site:upwork.com ${query}${typeFilter} jobs`);
+    }
+    if (searches.length === 0) searches.push(`${query}${typeFilter} job listing`);
+
+    const rawResults = [];
+    for (const searchQuery of searches) {
+      const fcRes = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${fcKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery, limit: Math.ceil(limit / searches.length) + 2 })
+      });
+      const fcData = await fcRes.json();
+      if (fcData.success && fcData.data) {
+        rawResults.push(...fcData.data.map(r => ({ ...r, _platform: searchQuery.includes('linkedin') ? 'LinkedIn' : searchQuery.includes('upwork') ? 'Upwork' : 'Web' })));
+      }
+    }
+
+    if (rawResults.length === 0) return res.json({ ok: true, jobs: [], message: 'No results found' });
+
+    const openai = new OpenAI({ apiKey: aiCfg.apiKey });
+
+    const extractPrompt = `You are a job data extractor. For each job listing below, extract structured info and calculate a technical fit score (0–100) based on how well it matches the user's search: "${query}".
+
+Fit score criteria:
+- Technical skills match (40 pts)
+- Job type match: user wants ${jobType} (20 pts)
+- Salary mentioned and reasonable (20 pts)
+- Clear contact/apply info available (20 pts)
+
+Job listings:
+${rawResults.slice(0, limit + 2).map((r, i) => `--- JOB ${i + 1} (${r._platform}) ---\nURL: ${r.url}\nTitle: ${r.title || ''}\n${(r.markdown || r.description || '').slice(0, 800)}`).join('\n\n')}
+
+Return a JSON array of objects with these fields (skip duplicates, return max ${limit} best matches):
+[{
+  "title": "Job title",
+  "company": "Company name",
+  "salary": "Salary range or 'Not specified'",
+  "location": "City/Country or 'Remote'",
+  "type": "Remote|Permanent|Hybrid|Contract",
+  "platform": "LinkedIn|Upwork|Web",
+  "tech_stack": ["skill1", "skill2"],
+  "contact": "email or name or 'Apply via link'",
+  "apply_url": "direct application URL",
+  "fit_score": 85,
+  "summary": "2-sentence job summary"
+}]
+
+Return ONLY valid JSON array, no markdown.`;
+
+    const gptRes = await openai.chat.completions.create({
+      model: aiCfg.model || 'gpt-4o',
+      messages: [{ role: 'user', content: extractPrompt }],
+      temperature: 0.2
+    });
+
+    let jobs = [];
+    try {
+      const text = gptRes.choices[0].message.content.trim();
+      jobs = JSON.parse(text.startsWith('[') ? text : text.slice(text.indexOf('[')));
+    } catch {
+      jobs = [];
+    }
+
+    jobs.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+
+    addLog(`🔍 Job search: "${query}" → ${jobs.length} results`, 'task');
+    res.json({ ok: true, query, jobType, platforms, count: jobs.length, jobs });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ── WEBSOCKET ──────────────────────────────────────────────────

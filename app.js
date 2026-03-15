@@ -458,6 +458,81 @@ document.querySelectorAll('[data-view="integrations"]').forEach(btn => {
   btn.addEventListener('click', () => setTimeout(loadIntegrations, 50));
 });
 
+// ── JOB SEARCH VIEW ──────────────────────────────────────────
+function scoreClass(s) {
+  if (s >= 75) return 'high';
+  if (s >= 50) return 'mid';
+  return 'low';
+}
+
+function renderJobCard(job) {
+  const score = job.fit_score || 0;
+  const typeClass = (job.type || '').toLowerCase().includes('remote') ? 'remote' : 'onsite';
+  const platClass = (job.platform || '').toLowerCase();
+  const tags = (job.tech_stack || []).slice(0, 6).map(t => `<span class="job-tag">${t}</span>`).join('');
+  return `
+    <div class="job-card">
+      <div class="job-card-top">
+        <div class="job-title">${job.title || 'Untitled'}</div>
+        <span class="job-score ${scoreClass(score)}">${score}/100</span>
+      </div>
+      <div class="job-meta">
+        <span>${job.company || 'Unknown company'}</span>
+        <span>📍 ${job.location || '—'}</span>
+        <span class="job-badge ${typeClass}">${job.type || 'Unknown'}</span>
+        <span class="job-badge ${platClass}">${job.platform || ''}</span>
+      </div>
+      <div class="job-summary">${job.summary || ''}</div>
+      ${tags ? `<div class="job-tech">${tags}</div>` : ''}
+      <div class="job-footer">
+        <div>
+          <div class="job-salary">${job.salary || 'Salary not specified'}</div>
+          ${job.contact && job.contact !== 'Apply via link' ? `<div class="job-contact">Contact: ${job.contact}</div>` : ''}
+        </div>
+        ${job.apply_url ? `<a class="job-apply-btn" href="${job.apply_url}" target="_blank" rel="noopener">Apply →</a>` : ''}
+      </div>
+    </div>`;
+}
+
+async function runJobSearch() {
+  const query = document.getElementById('jobQuery')?.value?.trim();
+  if (!query) return;
+  const jobType   = document.getElementById('jobType')?.value   || 'both';
+  const platforms = document.getElementById('jobPlatform')?.value || 'both';
+  const results   = document.getElementById('jobResults');
+  const btn       = document.getElementById('jobSearchBtn');
+
+  results.innerHTML = '<div class="job-loading">🔍 Searching via Firecrawl… this may take 15–30 seconds</div>';
+  btn.disabled = true;
+  btn.textContent = 'Searching…';
+
+  try {
+    const res  = await apiFetch('/api/jobs/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, jobType, platforms, limit: 6 })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      results.innerHTML = `<div class="job-empty">⚠️ ${data.error}</div>`;
+    } else if (!data.jobs?.length) {
+      results.innerHTML = `<div class="job-empty">No jobs found for "${query}". Try a different query.</div>`;
+    } else {
+      results.innerHTML = data.jobs.map(renderJobCard).join('');
+    }
+  } catch {
+    results.innerHTML = '<div class="job-empty">Search failed. Check Firecrawl config.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Search';
+  }
+}
+
+document.getElementById('jobSearchBtn')?.addEventListener('click', runJobSearch);
+document.getElementById('jobQuery')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') runJobSearch();
+});
+
 // ── INIT ───────────────────────────────────────────────────────
 document.getElementById('chatMessages').innerHTML = welcomeHTML();
 bindSuggestions();

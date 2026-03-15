@@ -77,6 +77,10 @@
           <span class="nav-icon">📡</span>
           <span class="nav-label">Activity</span>
         </button>
+        <button class="nav-btn" data-view="jobs">
+          <span class="nav-icon">🔍</span>
+          <span class="nav-label">Jobs</span>
+        </button>
         <button class="nav-btn" data-view="integrations">
           <span class="nav-icon">🔌</span>
           <span class="nav-label">Integrations</span>
@@ -176,6 +180,33 @@
         <div class="integrations-grid" id="integrationsGrid"></div>
       </div>
 
+      <!-- JOBS VIEW -->
+      <div class="view" id="view-jobs">
+        <div class="view-header">
+          <h2>Job Search</h2>
+          <span class="job-powered">via Firecrawl</span>
+        </div>
+        <div class="job-search-form">
+          <div class="job-form-row">
+            <input type="text" id="jobQuery" class="job-input" placeholder="e.g. Node.js developer, AI engineer, Network engineer…" />
+          </div>
+          <div class="job-form-row">
+            <select id="jobType" class="job-select">
+              <option value="both">Remote &amp; Permanent</option>
+              <option value="remote">Remote only</option>
+              <option value="permanent">Permanent only</option>
+            </select>
+            <select id="jobPlatform" class="job-select">
+              <option value="both">LinkedIn + Upwork</option>
+              <option value="linkedin">LinkedIn only</option>
+              <option value="upwork">Upwork only</option>
+            </select>
+            <button id="jobSearchBtn" class="job-search-btn">🔍 Search</button>
+          </div>
+        </div>
+        <div id="jobResults" class="job-results"></div>
+      </div>
+
     </main>
 
     <!-- ── MOBILE BOTTOM NAV ── -->
@@ -192,6 +223,10 @@
       <button class="mobile-nav-btn" data-view="log">
         <span class="mnav-icon">📡</span>
         <span class="mnav-label">Activity</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="jobs">
+        <span class="mnav-icon">🔍</span>
+        <span class="mnav-label">Jobs</span>
       </button>
       <button class="mobile-nav-btn" data-view="integrations">
         <span class="mnav-icon">🔌</span>

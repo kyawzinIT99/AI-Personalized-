@@ -666,3 +666,182 @@ textarea { font-family: inherit; font-size: inherit; color: inherit; }
   .brand-name { font-size: 14px; }
   .nav-label  { font-size: 12px; }
 }
+
+/* ── JOB SEARCH VIEW ─────────────────────────────────────── */
+.job-powered { font-size: 11px; color: var(--text-dim); opacity: .6; }
+
+.job-search-form {
+  padding: 16px 20px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.job-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.job-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 9px 13px;
+  font-size: 14px;
+  outline: none;
+}
+.job-input:focus { border-color: var(--accent); }
+.job-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.job-search-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.job-search-btn:hover { opacity: .85; }
+.job-search-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.job-results {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.job-empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 14px;
+}
+.job-loading {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 0;
+  font-size: 14px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Job card */
+.job-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  transition: border-color .2s;
+}
+.job-card:hover { border-color: var(--accent); }
+.job-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.job-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+.job-score {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: rgba(99,102,241,.15);
+  color: #818cf8;
+}
+.job-score.high { background: rgba(34,197,94,.15); color: #4ade80; }
+.job-score.mid  { background: rgba(234,179,8,.15);  color: #facc15; }
+.job-score.low  { background: rgba(239,68,68,.15);  color: #f87171; }
+
+.job-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.job-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(99,102,241,.1);
+  color: #a5b4fc;
+}
+.job-badge.remote   { background: rgba(34,197,94,.1);  color: #4ade80; }
+.job-badge.onsite   { background: rgba(234,179,8,.1);  color: #facc15; }
+.job-badge.linkedin { background: rgba(10,102,194,.2); color: #60a5fa; }
+.job-badge.upwork   { background: rgba(20,184,166,.2); color: #2dd4bf; }
+
+.job-summary {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.job-tech {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.job-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.job-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.job-salary { font-size: 13px; color: #4ade80; font-weight: 600; }
+.job-contact { font-size: 12px; color: var(--text-dim); }
+.job-apply-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: opacity .15s;
+}
+.job-apply-btn:hover { opacity: .8; }
+
+@media (max-width: 700px) {
+  .job-form-row { flex-wrap: wrap; }
+  .job-select { flex: 1; min-width: 120px; }
+}
