@@ -68,10 +68,10 @@ function buildSystemPrompt(basePrmpt, channel = 'chat') {
 
   const tone = `TONE & STYLE:
 - Be sharp, warm, and direct. Say what happened and stop. No padding.
-- Never end with "let me know", "feel free", "anything else", or similar filler phrases.
+- NEVER end responses with filler phrases like "let me know", "feel free", "anything else", "how else can I help", "is there anything else", or similar. Stop after delivering the result.
 - Confirm actions clearly: "Done — AI Meeting set for Sunday Mar 15 at 2:00 PM."
 - When reporting data (emails, messages, tasks), list the key facts cleanly, then stop.
-- Never expose raw URLs, IDs, or technical error strings to the user.
+- When a tool returns an error, report it clearly: "Slack failed: [error]". Never hide tool errors with vague phrases like "there was an issue" or "I'll address this later".
 - ${channel === 'line' || channel === 'telegram' || channel === 'viber' ? 'Use plain text only — no markdown, no bold, no bullet symbols.' : 'In the web GUI you may use markdown for lists and bold.'}
 - Always reply in English only. No Thai, Burmese, or other languages.`;
 
@@ -988,20 +988,34 @@ function loadTelegramConfig() {
   } catch (_) { return null; }
 }
 
+const SLACK_CFG_PATH   = path.join(__dirname, 'slack.config.json');
+const SLACK_VOLUME_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, '.data');
+const SLACK_TOKEN_FILE = path.join(SLACK_VOLUME_DIR, 'slack_token.json');
+fs.mkdirSync(SLACK_VOLUME_DIR, { recursive: true });
+
 function loadSlackConfig() {
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'slack.config.json'), 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(SLACK_CFG_PATH, 'utf8'));
     if (!cfg.botToken || cfg.botToken.startsWith('PASTE_')) return null;
+    // Override with persisted token from Modal Volume (survives container restarts)
+    try {
+      const saved = JSON.parse(fs.readFileSync(SLACK_TOKEN_FILE, 'utf8'));
+      if (saved.botToken)     cfg.botToken     = saved.botToken;
+      if (saved.refreshToken) cfg.refreshToken = saved.refreshToken;
+    } catch {}
     return cfg;
   } catch (_) { return null; }
 }
-
-const SLACK_CFG_PATH = path.join(__dirname, 'slack.config.json');
 
 // Auto-refresh Slack rotating token using clientId + clientSecret + refreshToken
 async function refreshSlackToken() {
   try {
     const cfg = JSON.parse(fs.readFileSync(SLACK_CFG_PATH, 'utf8'));
+    // Merge persisted refresh token from volume if newer
+    try {
+      const saved = JSON.parse(fs.readFileSync(SLACK_TOKEN_FILE, 'utf8'));
+      if (saved.refreshToken) cfg.refreshToken = saved.refreshToken;
+    } catch {}
     if (!cfg.clientId || !cfg.clientSecret || !cfg.refreshToken) return null;
     const params = new URLSearchParams({
       grant_type:    'refresh_token',
@@ -1016,12 +1030,12 @@ async function refreshSlackToken() {
     });
     const data = await res.json();
     if (!data.ok) { addLog(`⚠️ Slack token refresh failed: ${data.error}`, 'off'); return null; }
-    // Save new tokens back to config
-    cfg.botToken     = data.authed_user?.access_token || data.access_token || cfg.botToken;
-    if (data.refresh_token) cfg.refreshToken = data.refresh_token;
-    fs.writeFileSync(SLACK_CFG_PATH, JSON.stringify(cfg, null, 2));
-    addLog('🔑 Slack token auto-refreshed', 'on');
-    return cfg.botToken;
+    const newToken   = data.authed_user?.access_token || data.access_token || cfg.botToken;
+    const newRefresh = data.refresh_token || cfg.refreshToken;
+    // Persist refreshed tokens to Modal Volume so they survive container restarts
+    fs.writeFileSync(SLACK_TOKEN_FILE, JSON.stringify({ botToken: newToken, refreshToken: newRefresh }, null, 2));
+    addLog('🔑 Slack token auto-refreshed and persisted', 'on');
+    return newToken;
   } catch (e) { addLog(`⚠️ Slack refresh error: ${e.message}`, 'off'); return null; }
 }
 
@@ -1420,6 +1434,20 @@ const CLAWBOT_TOOLS = [
           title:       { type: 'string', description: 'Task or page title' },
           description: { type: 'string', description: 'Task details or notes' },
           due_date:    { type: 'string', description: 'Due date in YYYY-MM-DD format (optional)' }
+        },
+        required: ['title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_notion_task',
+      description: 'Delete (remove) a task from the Notion Weekly To-do List by matching its title',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Title or partial title of the task to delete' }
         },
         required: ['title']
       }
@@ -1974,21 +2002,43 @@ async function executeClawbotTool(toolName, args) {
       case 'get_notion_tasks': {
         const notion = getNotionClient();
         if (!notion) return { ok: false, error: 'Notion not configured. Add API key to notion.config.json.' };
-        if (!notionCfg.databaseId) return { ok: false, error: 'Notion databaseId missing.' };
-        const filter = args.filter || 'all';
-        const queryOpts = { database_id: notionCfg.databaseId, page_size: 20 };
-        if (filter === 'done')    queryOpts.filter = { property: 'Done', checkbox: { equals: true } };
-        if (filter === 'pending') queryOpts.filter = { property: 'Done', checkbox: { equals: false } };
-        const res = await notion.databases.query(queryOpts);
-        const tasks = res.results.map(p => ({
-          id: p.id,
-          title: p.properties?.Name?.title?.[0]?.plain_text || p.properties?.Task?.title?.[0]?.plain_text || '(untitled)',
-          done:  p.properties?.Done?.checkbox || false,
-          due:   p.properties?.['Due Date']?.date?.start || '',
-          url:   p.url
-        }));
-        addLog(`📋 Notion tasks fetched: ${tasks.length}`, 'task');
-        return { ok: true, count: tasks.length, tasks };
+        if (!notionCfg.databaseId) return { ok: false, error: 'Notion page ID missing.' };
+        try {
+          const filter = args.filter || 'all';
+          const tasks = [];
+
+          // Helper: extract plain text from rich_text array
+          const getText = (rt) => (rt || []).map(r => r.plain_text || '').join('').trim();
+
+          // Helper: read to_do blocks from a block's children
+          async function readTodos(blockId, day = '') {
+            const res = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
+            for (const b of res.results) {
+              if (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3') {
+                day = getText(b[b.type].rich_text);
+              } else if (b.type === 'to_do') {
+                const title = getText(b.to_do.rich_text);
+                if (title) tasks.push({ title, done: b.to_do.checked, day });
+              } else if (b.type === 'column_list') {
+                const cols = await notion.blocks.children.list({ block_id: b.id, page_size: 50 });
+                for (const col of cols.results) {
+                  if (col.type === 'column') await readTodos(col.id, day);
+                }
+              }
+            }
+          }
+
+          await readTodos(notionCfg.databaseId);
+
+          const filtered = filter === 'done'    ? tasks.filter(t => t.done)
+                         : filter === 'pending' ? tasks.filter(t => !t.done)
+                         : tasks;
+          addLog(`📋 Notion tasks fetched: ${filtered.length}`, 'task');
+          return { ok: true, count: filtered.length, tasks: filtered };
+        } catch (e) {
+          console.error('[Notion] get_notion_tasks error:', e.message, e.code);
+          return { ok: false, error: `Notion API error: ${e.message}` };
+        }
       }
 
       case 'rename_drive_file': {
@@ -2035,21 +2085,59 @@ async function executeClawbotTool(toolName, args) {
       }
 
       case 'create_notion_task': {
-        const { title, description = '', due_date = '' } = args;
+        const { title, description = '' } = args;
         const notion = getNotionClient();
         if (!notion) return { ok: false, error: 'Notion not configured. Check notion.config.json.' };
-        if (!notionCfg.databaseId) return { ok: false, error: 'Notion databaseId missing in notion.config.json.' };
+        if (!notionCfg.databaseId) return { ok: false, error: 'Notion page ID missing in notion.config.json.' };
+        try {
+          const children = [{ object: 'block', type: 'to_do', to_do: { rich_text: [{ type: 'text', text: { content: title } }], checked: false } }];
+          if (description) children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: description } }] } });
+          await notion.blocks.children.append({ block_id: notionCfg.databaseId, children });
+          addLog(`📝 Notion task created: "${title}"`, 'task');
+          return { ok: true, title };
+        } catch (e) {
+          return { ok: false, error: `Notion API error: ${e.message}` };
+        }
+      }
 
-        const props = { Name: { title: [{ text: { content: title } }] } };
-        if (due_date) props['Due Date'] = { date: { start: due_date } };
-        if (description) props['Notes'] = { rich_text: [{ text: { content: description } }] };
+      case 'delete_notion_task': {
+        const notion = getNotionClient();
+        if (!notion) return { ok: false, error: 'Notion not configured.' };
+        if (!notionCfg.databaseId) return { ok: false, error: 'Notion page ID missing.' };
+        try {
+          const query = args.title.toLowerCase();
+          const getText = (rt) => (rt || []).map(r => r.plain_text || '').join('').trim();
 
-        const page = await notion.pages.create({
-          parent: { database_id: notionCfg.databaseId },
-          properties: props
-        });
-        addLog(`📝 Notion task created: "${title}"`, 'task');
-        return { ok: true, pageId: page.id, url: page.url, title };
+          // Recursively find matching to_do blocks
+          async function findAndDelete(blockId) {
+            const res = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
+            for (const b of res.results) {
+              if (b.type === 'to_do') {
+                const text = getText(b.to_do.rich_text);
+                if (text.toLowerCase().includes(query)) {
+                  await notion.blocks.delete({ block_id: b.id });
+                  return text;
+                }
+              } else if (b.type === 'column_list') {
+                const cols = await notion.blocks.children.list({ block_id: b.id, page_size: 50 });
+                for (const col of cols.results) {
+                  if (col.type === 'column') {
+                    const found = await findAndDelete(col.id);
+                    if (found) return found;
+                  }
+                }
+              }
+            }
+            return null;
+          }
+
+          const deleted = await findAndDelete(notionCfg.databaseId);
+          if (!deleted) return { ok: false, error: `Task "${args.title}" not found in Notion` };
+          addLog(`🗑 Notion task deleted: "${deleted}"`, 'task');
+          return { ok: true, deleted };
+        } catch (e) {
+          return { ok: false, error: `Notion API error: ${e.message}` };
+        }
       }
 
       case 'delete_drive_file': {
@@ -2519,6 +2607,18 @@ app.post('/api/drive/upload', upload.single('file'), async (req, res) => {
     res.json({ ok: true, name, id, url: webViewLink, folder });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/notion/debug', async (_req, res) => {
+  try {
+    const notion = getNotionClient();
+    if (!notion) return res.json({ ok: false, error: 'No API key configured' });
+    const page = await notion.pages.retrieve({ page_id: notionCfg.databaseId });
+    const children = await notion.blocks.children.list({ block_id: notionCfg.databaseId, page_size: 5 });
+    res.json({ ok: true, pageId: page.id, blockTypes: children.results.map(b => b.type) });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, code: e.code, status: e.status });
   }
 });
 

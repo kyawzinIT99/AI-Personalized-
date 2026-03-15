@@ -1,23 +1,23 @@
 # Clawbot User Manual
-## Mawbolt Systems — Kyaw Zin
+## itsolutions.mm — Kyaw Zin Tun
 
 ---
 
 ## 1. System Overview
 
-Clawbot is a fully autonomous AI daily operations agent running 24/7 on Modal cloud infrastructure. It manages email, calendar, Telegram, LINE, Viber, tasks, and end-of-day reports on behalf of Kyaw Zin — with no human effort required.
+Clawbot is a fully autonomous AI daily operations agent running 24/7 on Modal cloud infrastructure. It manages email, calendar, Telegram, LINE, Viber, Slack, Notion, Google Drive, tasks, and end-of-day reports — with no human effort required.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  CLAWBOT STACK                      │
-│                                                     │
-│  Web GUI / Chat    ←→   Modal (24/7 Cloud)          │
-│  OpenClaw TUI      ←→   Node.js server.js           │
-│  Zapier Zaps       ←→   OpenAI GPT-4o (Agentic)     │
-│                         ↕                           │
-│                    Gmail · Calendar · Telegram       │
-│                    LINE · Viber                     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      CLAWBOT STACK                          │
+│                                                             │
+│  Web GUI / Chat    ←→   Modal (24/7 Cloud)                  │
+│  Telegram / LINE   ←→   Node.js server.js                   │
+│  Viber / Slack     ←→   OpenAI GPT-4o (Agentic Loop)        │
+│                              ↕                              │
+│              Gmail · Calendar · Telegram · LINE             │
+│              Viber · Slack · Notion · Google Drive          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Public URL (always online):**
@@ -35,53 +35,50 @@ Open in any browser — phone, tablet, or desktop:
 https://itsolutions-mm--clawbot-serve.modal.run
 ```
 - Chat with Clawbot AI (GPT-4o)
-- View and toggle tasks
+- View and manage tasks (Task Board)
 - Monitor activity log
-
-### 2.2 OpenClaw TUI (Terminal)
-Run in VS Code terminal or macOS Terminal:
-```bash
-openclaw tui
-```
-- Opens automatically on Mac login
-- Connects to local OpenClaw gateway (`ws://127.0.0.1:18789`)
-- Full chat interface in terminal
-
-### 2.3 OpenClaw Web Dashboard
-```
-http://127.0.0.1:18789
-```
-- Local browser dashboard for OpenClaw gateway
+- Check integration status (Integrations tab)
 
 ---
 
 ## 3. Daily Workflow
 
 ### Morning (08:00–09:00 Yangon)
-Clawbot automatically handles or you can trigger manually:
 
-| Task | How |
-|------|-----|
-| Morning briefing | Type `morning briefing` in chat |
-| Check overnight email | Type `check my email` |
-| Review calendar | Type `what's on my calendar today` |
-| Set priorities | Type `show task status` |
+| Task | Chat command |
+|------|-------------|
+| Morning briefing | `morning briefing` |
+| Check overnight email | `check my email` |
+| Review calendar | `what's on my calendar today` |
+| Set priorities | `show task status` |
+| Check Notion tasks | `check notion tasks` |
 
 ### During the Day
+
 | Action | Chat command |
 |--------|-------------|
-| Send Telegram | `send telegram: [message]` |
+| Send Telegram message | `send telegram: [message]` |
 | Send LINE message | `send LINE: [message]` |
 | Send email | `send email to [name]: [message]` |
-| Complete a task | Click ✓ in Tasks view, or type `complete task [id]` |
-| Add a task | `add task: [name] in [group]` |
+| Send Slack message | `send slack message: [message]` |
+| Read Slack messages | `check slack messages` |
+| Add Notion task | `add to notion: [task name]` |
+| Delete Notion task | `delete [task name] in notion` |
+| Find Drive file | `find [filename] in drive` |
+| Upload file | Click 📎 in chat input |
+| Create Drive folder | `create folder [name]` |
+| Move Drive file | `move [file] to [folder]` |
+| Copy Drive file | `copy [file] to [folder]` |
+| Rename Drive file | `rename [file] to [new name]` |
+| Delete Drive file | `delete file [name]` |
 
 ### End of Day (17:00–18:00 Yangon)
-| Task | How |
-|------|-----|
-| Generate EOD report | Type `generate end-of-day report` |
-| Check completion | Type `show task status` |
-| Plan tomorrow | Type `schedule tomorrow's priorities` |
+
+| Task | Chat command |
+|------|-------------|
+| Generate EOD report | `generate end-of-day report` |
+| Check completion | `show task status` |
+| Set reminder | `remind me to [task] at [time]` |
 
 ---
 
@@ -89,23 +86,15 @@ Clawbot automatically handles or you can trigger manually:
 
 Auto Mode runs **all tasks automatically** without any human input.
 
-### Start Auto Mode
-- Click **▶ Auto Mode** in the sidebar, or
-- Type `start auto mode` in chat, or
-- `POST https://...modal.run/api/auto/start`
-
-### Stop Auto Mode
-- Click **⏹ Stop Auto** in the sidebar, or
-- Type `stop auto mode`, or
-- `POST https://...modal.run/api/auto/stop`
-
-### Reset All Tasks
-- Click **↺ Reset Tasks** in the sidebar
-- This marks all tasks as undone for the next cycle
+| Action | How |
+|--------|-----|
+| Start | Click **▶ Auto Mode** in sidebar, or type `start auto mode` |
+| Stop | Click **⏹ Stop Auto** in sidebar, or type `stop auto mode` |
+| Reset tasks | Click **↺ Reset Tasks** in sidebar |
 
 ---
 
-## 5. Task Groups & IDs
+## 5. Task Groups
 
 | Group | IDs | Description |
 |-------|-----|-------------|
@@ -122,144 +111,130 @@ Auto Mode runs **all tasks automatically** without any human input.
 
 ---
 
-## 6. Messaging Channels
+## 6. Integrations
 
-### Telegram
-- **Bot:** Configured and active
-- **Webhook:** `https://...modal.run/api/telegram/webhook`
-- AI auto-reply: ON — responds to messages in English
+### 6.1 Telegram
+- **Auto-reply:** ON — responds to ALL users in English
+- **Webhook:** `https://itsolutions-mm--clawbot-serve.modal.run/api/telegram/webhook`
+- **Contacts:** Persistent across restarts (stored in Modal Volume `/data/tg_contacts.json`)
+- External users receive knowledge about AI automation, N8N, Make, Cloud, Network (≤80 words)
 
-### LINE
+### 6.2 LINE
 - **Channel:** n8n_AI(AUTOMATIC) — ID: 2008340718
-- **Webhook:** `https://...modal.run/api/line/webhook`
-- AI auto-reply: ON — responds in English only
-- **Default user ID:** `Ua6b07f3ac1a5fb9a0bf21a6dc543a559`
+- **Webhook:** `https://itsolutions-mm--clawbot-serve.modal.run/api/line/webhook`
+- **Auto-reply:** ON — English only
+- **Default user:** `Ua6b07f3ac1a5fb9a0bf21a6dc543a559`
 
-### Viber
-- **Status:** ⚠️ Needs auth token
-- **Action:** Get token from https://partners.viber.com → paste into `viber.config.json`
-- **Webhook:** `https://...modal.run/api/viber/webhook`
+### 6.3 Viber
+- **Status:** Needs auth token
+- Get token from https://partners.viber.com → paste into `viber.config.json`
+- **Webhook:** `https://itsolutions-mm--clawbot-serve.modal.run/api/viber/webhook`
 
-### Email (Gmail)
-- **Account:** itsolutions.mm@gmail.com
+### 6.4 Slack
+- **Workspace:** N8N AI Bot
+- **Bot:** n8napp
+- **Default channel:** `#all-n8n-ai-bot` (`C09FXJCTJRL`)
+- **Config:** `slack.config.json` — `botToken` (xoxb-), `defaultChannelId`
+- **Scopes required:** `chat:write`, `channels:history`, `channels:read`
+
+### 6.5 Notion
+- **Page:** Weekly To-do List
+- **Page ID:** `27997eea-009f-8116-b447-d8a907938667`
+- **Config:** `notion.config.json` — `apiKey`, `databaseId`
+- Uses to_do block structure (columns per day: Mon–Sun)
+- Supports: read tasks, add task, delete task by name
+
+### 6.6 Google (Gmail / Drive / Calendar)
+- **Gmail:** itsolutions.mm@gmail.com
+- **Calendar:** kyawzin.ccna@gmail.com
+- **Drive:** Full file management (search, upload, move, copy, rename, delete, create folders)
+- **Config:** `google_user_token.json` (OAuth token), `gcpkyawzin*.json` (service account)
+
+### 6.7 Facebook Messenger
+- **Status:** Needs PSID (defaultRecipientId) in `facebook.config.json`
+- Page Access Token must start with `EAA`
+
+### 6.8 Email (Gmail IMAP/SMTP)
 - Scans for urgent keywords automatically
-- Can send emails via AI command
-
-### Google Calendar
-- **Account:** kyawzin.ccna@gmail.com
-- Reads today's events on demand
+- Sends emails with or without Drive attachments
+- **Config:** `email.config.json`
 
 ---
 
-## 7. OpenClaw (Local AI Agent)
+## 7. Google Drive Tools
 
-OpenClaw runs locally on your Mac and connects to the Clawbot server.
-
-### Gateway
-```bash
-# Check status
-openclaw gateway status
-
-# View logs
-tail -f ~/.openclaw/logs/gateway.log
-```
-
-The gateway starts automatically on Mac login via LaunchAgent.
-
-### TUI Controls
-| Key | Action |
-|-----|--------|
-| `Enter` | Send message |
-| `Shift+Enter` | New line |
-| `Ctrl+L` | Switch AI model |
-| `Ctrl+G` | Switch agents |
-| `Ctrl+P` | Session list |
-| `Esc` | Stop current run |
-| `Ctrl+C` | Exit TUI |
-
-### OpenClaw Config
-```
-~/.openclaw/openclaw.json
-```
-- Model: `openai/gpt-4o`
-- Gateway port: `18789`
-- Agent name: Clawbot 🦞
-
-### Workspace Files
-```
-~/.openclaw/workspace/
-  IDENTITY.md      ← Who Clawbot is
-  USER.md          ← About Kyaw Zin
-  SOUL.md          ← Agent personality
-  HEARTBEAT.md     ← Proactive check schedule
-  AGENTS.md        ← Session startup rules
-  skills/
-    clawbot/
-      SKILL.md     ← Full Clawbot API reference
-```
+| Command | What it does |
+|---------|-------------|
+| `find [name] in drive` | Search all of Drive including subfolders |
+| `list drive files` | Show recent or folder contents |
+| `upload file` | Click 📎 button in chat (up to 50MB) |
+| `send file [name] to [email]` | Find file in Drive and attach to email |
+| `create folder [name]` | Create a new folder in Drive |
+| `move [file] to [folder]` | Move file to a different folder |
+| `copy [file] to [folder]` | Copy file into a folder |
+| `rename [file] to [new name]` | Rename a file or folder |
+| `delete file [name]` | Delete file from Drive |
+| `create sheet [title]` | Create a new Google Sheet |
+| `read sheet` | Read rows from a Google Sheet |
+| `add row to sheet` | Append a row to a Google Sheet |
 
 ---
 
-## 8. Zapier Integrations
+## 8. Reminders
 
-**Connected Apps:** Gmail · Google Calendar · Notion · Facebook Messenger · Facebook Pages · Tavily
+| Command | Example |
+|---------|---------|
+| Set reminder | `remind me to call client at 3pm` |
+| List reminders | `show reminders` |
+| Cancel reminder | `cancel reminder [id]` |
 
-### Webhook Config File
-```
-/Users/berry/Antigravity/Clawbot webiste/zapier.config.json
-```
-
-Paste Zapier Catch Hook URLs here:
-```json
-{
-  "task_completed":    "https://hooks.zapier.com/...",
-  "all_tasks_complete":"https://hooks.zapier.com/...",
-  "urgent_email":      "https://hooks.zapier.com/...",
-  "calendar_events":   "https://hooks.zapier.com/..."
-}
-```
-After editing, redeploy: `modal deploy clawbot_modal.py`
-
-### Planned Zaps
-| # | Trigger | Action |
-|---|---------|--------|
-| 1 | Gmail urgent email | Create Clawbot task |
-| 2 | Google Calendar event | Send Telegram reminder |
-| 3 | Clawbot task completed | Log to Notion |
-| 4 | Facebook Messenger msg | Create Clawbot task |
-| 5 | Google Calendar | Add to Notion daily planner |
+Reminders fire via Telegram message + web alert.
 
 ---
 
-## 9. API Reference
+## 9. Integrations Dashboard
+
+Click the **🔌 Integrations** tab in the web GUI to:
+- See live connection status for all 8 services (green = connected, grey = not configured)
+- Click **Test** on Telegram, Slack, Notion, or Google to do a live API ping
+- Click **↺ Refresh** to reload status
+
+---
+
+## 10. API Reference
 
 **Base URL:** `https://itsolutions-mm--clawbot-serve.modal.run`
+
+All `/api/` endpoints require header: `x-api-key: [your secret from auth.config.json]`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/state` | Full system state + all tasks |
 | GET | `/api/report` | Summary report |
-| GET | `/api/report/full` | Detailed EOD report |
+| POST | `/api/chat` | Chat with AI `{message}` |
+| GET | `/api/chat/history` | Chat history |
+| POST | `/api/chat/clear` | Clear chat history |
 | POST | `/api/task` | Add custom task `{name, group}` |
 | POST | `/api/task/:id/toggle` | Toggle task done/undone |
 | POST | `/api/auto/start` | Start auto mode |
 | POST | `/api/auto/stop` | Stop auto mode |
 | POST | `/api/reset` | Reset all tasks |
-| POST | `/api/chat` | Chat with AI `{message}` |
-| GET | `/api/chat/history` | Chat history |
-| POST | `/api/chat/clear` | Clear chat history |
 | GET | `/api/email/scan` | Scan urgent emails |
 | POST | `/api/email/send` | Send email `{to, subject, body}` |
-| GET | `/api/calendar/events` | Today's events |
+| GET | `/api/calendar/events` | Today's calendar events |
 | POST | `/api/telegram/send` | Send Telegram `{message}` |
 | POST | `/api/line/send` | Send LINE `{message}` |
 | POST | `/api/viber/send` | Send Viber `{message}` |
 | GET | `/api/telegram/contacts` | Telegram contact list |
-| GET | `/api/line/contacts` | LINE contact list |
+| POST | `/api/drive/upload` | Upload file to Drive (multipart) |
+| GET | `/api/integrations/status` | All integration statuses |
+| POST | `/api/integrations/test/:service` | Live test for telegram/slack/notion/google |
+| GET | `/api/notion/debug` | Notion connection diagnostic |
+| GET | `/api/log` | Recent activity log |
 
 ---
 
-## 10. Deployment
+## 11. Deployment
 
 Clawbot runs on **Modal** and stays online 24/7 even when your Mac is off.
 
@@ -272,61 +247,97 @@ modal deploy clawbot_modal.py
 ### Project Files
 ```
 /Users/berry/Antigravity/Clawbot webiste/
-  server.js              ← Main Node.js backend
-  index.html             ← Chat GUI
-  style.css              ← GUI styles
-  app.js                 ← GUI JavaScript
-  clawbot_modal.py       ← Modal deployment config
-  openai.config.json     ← GPT-4o API key + system prompt
-  email.config.json      ← Gmail IMAP/SMTP config
-  telegram.config.json   ← Telegram bot token
+  server.js                ← Main Node.js backend
+  index.html               ← Chat GUI
+  style.css                ← GUI styles
+  app.js                   ← GUI JavaScript
+  clawbot_modal.py         ← Modal deployment + Volume config
+  package.json             ← Node dependencies
+  openai.config.json       ← GPT-4o API key + system prompt
+  email.config.json        ← Gmail IMAP/SMTP credentials
+  telegram.config.json     ← Telegram bot token
   clawbot_line_config.json ← LINE channel credentials
-  viber.config.json      ← Viber auth token (needs setup)
-  google.config.json     ← Google Calendar OAuth
-  zapier.config.json     ← Zapier webhook URLs
+  viber.config.json        ← Viber auth token
+  slack.config.json        ← Slack bot token + channel ID
+  notion.config.json       ← Notion API key + page ID
+  facebook.config.json     ← Facebook page access token
+  auth.config.json         ← Clawbot API secret key
+  google_user_token.json   ← Google OAuth token (gitignored)
+  gcpkyawzin*.json         ← Google service account (gitignored)
 ```
+
+### Modal Volume (Persistent Storage)
+Survives container restarts — stored at `/data` in the cloud:
+- `/data/tg_contacts.json` — Telegram contact registry
+- `/data/slack_token.json` — Refreshed Slack token cache
 
 ### Check deployment logs
 ```
 https://modal.com/apps/itsolutions-mm/main/deployed/clawbot
 ```
 
+### GitHub Repository
+```
+https://github.com/kyawzinIT99/AI-Personalized-
+```
+
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | GUI shows "Reconnecting…" | Refresh browser; Modal may be cold-starting |
-| LINE/Telegram not replying | Check webhook URL in each platform's console |
+| Telegram not replying | Check webhook URL in Telegram BotFather console |
+| LINE not replying | Verify webhook at LINE Developers console |
+| Notion tasks empty | Ensure integration is connected to the page at notion.so |
+| Slack `token_revoked` | Reinstall Slack app → get new `xoxb-` token → update `slack.config.json` |
+| Slack `missing_scope` | Add `channels:history` in Slack app OAuth & Permissions → reinstall |
+| Slack `channel_not_found` | Bot not in channel — run `/invite @botname` in Slack |
 | Email scan fails | Verify `email.config.json` credentials |
-| Calendar empty | Re-authenticate Google OAuth in `google.config.json` |
-| OpenClaw TUI won't start | Run `openclaw gateway status`; restart with `openclaw gateway restart` |
-| Bot replies in Thai | System prompt enforces English; clear chat history and retry |
-| Viber not working | Add real auth token from partners.viber.com |
+| Calendar empty | Re-authenticate Google OAuth |
+| Drive upload fails | Check Google token in `google_user_token.json` |
+| Bot replies with filler phrases | Clear chat and retry; tone rules enforce sharp responses |
 
 ---
 
-## 12. Quick Reference
+## 13. Config File Quick Reference
 
+| File | Key fields |
+|------|-----------|
+| `openai.config.json` | `apiKey`, `model`, `systemPrompt` |
+| `telegram.config.json` | `botToken`, `defaultChatId` |
+| `clawbot_line_config.json` | `channel.channel_access_token` |
+| `viber.config.json` | `authToken` |
+| `slack.config.json` | `botToken`, `defaultChannelId` |
+| `notion.config.json` | `apiKey`, `databaseId` (page ID) |
+| `facebook.config.json` | `pageAccessToken`, `defaultRecipientId` |
+| `auth.config.json` | `apiSecret`, `chatRateLimitPerMinute` |
+| `email.config.json` | `user`, `pass`, `smtp`, `imap` |
+
+After editing any config file:
+```bash
+modal deploy clawbot_modal.py
 ```
+
+---
+
+## 14. Quick Reference
+
+```bash
 # Deploy
 modal deploy clawbot_modal.py
 
-# OpenClaw TUI
-openclaw tui
+# Test Notion connection
+curl -H "x-api-key: [secret]" https://itsolutions-mm--clawbot-serve.modal.run/api/notion/debug
 
-# OpenClaw gateway
-openclaw gateway status
-openclaw gateway restart
+# Test all integrations
+curl -H "x-api-key: [secret]" https://itsolutions-mm--clawbot-serve.modal.run/api/integrations/status
 
-# Check logs
-tail -f ~/.openclaw/logs/gateway.log
-
-# Test Clawbot API
-curl https://itsolutions-mm--clawbot-serve.modal.run/api/report
+# Test Slack live
+curl -X POST -H "x-api-key: [secret]" https://itsolutions-mm--clawbot-serve.modal.run/api/integrations/test/slack
 ```
 
 ---
 
-*Clawbot — Mawbolt Systems | Powered by OpenAI GPT-4o + Modal + OpenClaw*
+*Clawbot — itsolutions.mm | Powered by OpenAI GPT-4o + Modal Cloud*
