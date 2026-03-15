@@ -77,6 +77,10 @@
           <span class="nav-icon">📡</span>
           <span class="nav-label">Activity</span>
         </button>
+        <button class="nav-btn" data-view="integrations">
+          <span class="nav-icon">🔌</span>
+          <span class="nav-label">Integrations</span>
+        </button>
       </nav>
 
       <div class="sidebar-actions">
@@ -120,6 +124,8 @@
               <button class="suggestion" data-msg="Check LINE messages">💚 LINE</button>
               <button class="suggestion" data-msg="Show my recent Drive files">📁 Drive</button>
               <button class="suggestion" data-msg="Send Facebook message">📘 Facebook</button>
+              <button class="suggestion" data-msg="Check slack messages">💬 Slack</button>
+              <button class="suggestion" data-msg="Check notion tasks">📝 Notion</button>
             </div>
           </div>
         </div>
@@ -161,6 +167,15 @@
         <div class="log-list" id="logList"></div>
       </div>
 
+      <!-- INTEGRATIONS VIEW -->
+      <div class="view" id="view-integrations">
+        <div class="view-header">
+          <h2>Integrations</h2>
+          <button class="hdr-btn" id="refreshIntegrationsBtn">↺ Refresh</button>
+        </div>
+        <div class="integrations-grid" id="integrationsGrid"></div>
+      </div>
+
     </main>
 
     <!-- ── MOBILE BOTTOM NAV ── -->
@@ -177,6 +192,10 @@
       <button class="mobile-nav-btn" data-view="log">
         <span class="mnav-icon">📡</span>
         <span class="mnav-label">Activity</span>
+      </button>
+      <button class="mobile-nav-btn" data-view="integrations">
+        <span class="mnav-icon">🔌</span>
+        <span class="mnav-label">Connect</span>
       </button>
       <button class="mobile-nav-btn" id="mobileMenuBtn" data-view="menu">
         <span class="mnav-icon">⚙️</span>

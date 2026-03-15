@@ -608,6 +608,51 @@ textarea { font-family: inherit; font-size: inherit; color: inherit; }
   .log-list    { padding: 10px 14px; }
 }
 
+/* ── INTEGRATIONS VIEW ── */
+.integrations-grid {
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px; align-content: start;
+}
+.integrations-grid::-webkit-scrollbar { width: 4px; }
+.integrations-grid::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+.int-loading { color: var(--text3); font-size: 13px; padding: 20px; }
+
+.int-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 14px;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.int-card.connected   { border-color: rgba(16,185,129,0.3); }
+.int-card.disconnected { opacity: 0.65; }
+.int-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+
+.int-card-top { display: flex; justify-content: space-between; align-items: center; }
+.int-icon  { font-size: 26px; line-height: 1; }
+.int-dot   { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.int-dot.on  { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.int-dot.off { background: var(--text3); }
+
+.int-label  { font-size: 12px; font-weight: 800; color: var(--text); line-height: 1.3; }
+.int-status { font-size: 11px; color: var(--text3); }
+
+.int-test-btn {
+  margin-top: 4px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3);
+  color: var(--accent3); font-size: 11px; font-weight: 700;
+  cursor: pointer; transition: all 0.15s; font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.int-test-btn:hover   { background: rgba(124,58,237,0.3); }
+.int-test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.int-test-btn.success { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); color: var(--green); }
+.int-test-btn.fail    { background: rgba(244,63,94,0.15);  border-color: rgba(244,63,94,0.3);  color: var(--red); }
+
+@media (max-width: 700px) {
+  .integrations-grid { padding: 12px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+}
+
 /* ── VERY SMALL SCREENS ── */
 @media (max-width: 380px) {
   .welcome-title { font-size: 19px; }

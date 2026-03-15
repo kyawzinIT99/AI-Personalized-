@@ -165,6 +165,8 @@ function welcomeHTML() {
       <button class="suggestion" data-msg="Check LINE messages">💚 LINE</button>
       <button class="suggestion" data-msg="Show my recent Drive files">📁 Drive</button>
       <button class="suggestion" data-msg="Send Facebook message">📘 Facebook</button>
+      <button class="suggestion" data-msg="Check slack messages">💬 Slack</button>
+      <button class="suggestion" data-msg="Check notion tasks">📝 Notion</button>
     </div>
   </div>`;
 }
@@ -405,6 +407,56 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', onViewportChange);
   window.visualViewport.addEventListener('scroll', onViewportChange);
 }
+
+// ── INTEGRATIONS VIEW ───────────────────────────────────────────
+async function loadIntegrations() {
+  const grid = document.getElementById('integrationsGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="int-loading">Loading…</div>';
+  try {
+    const res  = await apiFetch('/api/integrations/status');
+    const data = await res.json();
+    grid.innerHTML = '';
+    Object.entries(data).forEach(([key, svc]) => {
+      const card = document.createElement('div');
+      card.className = `int-card ${svc.ok ? 'connected' : 'disconnected'}`;
+      card.innerHTML = `
+        <div class="int-card-top">
+          <span class="int-icon">${svc.icon}</span>
+          <span class="int-dot ${svc.ok ? 'on' : 'off'}"></span>
+        </div>
+        <div class="int-label">${svc.label}</div>
+        <div class="int-status">${svc.ok ? 'Connected' : 'Not configured'}</div>
+        ${svc.ok && ['telegram','slack','notion','google'].includes(key) ? `<button class="int-test-btn" data-svc="${key}">Test</button>` : ''}
+      `;
+      grid.appendChild(card);
+    });
+    grid.querySelectorAll('.int-test-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.textContent = '…';
+        btn.disabled = true;
+        try {
+          const r = await apiFetch(`/api/integrations/test/${btn.dataset.svc}`, { method: 'POST' });
+          const d = await r.json();
+          btn.textContent = d.ok ? `✓ ${d.detail}` : `✗ ${d.error}`;
+          btn.className = 'int-test-btn ' + (d.ok ? 'success' : 'fail');
+        } catch {
+          btn.textContent = '✗ Error';
+          btn.className = 'int-test-btn fail';
+        }
+      });
+    });
+  } catch {
+    grid.innerHTML = '<div class="int-loading">Failed to load</div>';
+  }
+}
+
+document.getElementById('refreshIntegrationsBtn')?.addEventListener('click', loadIntegrations);
+
+// Load integrations when switching to that view
+document.querySelectorAll('[data-view="integrations"]').forEach(btn => {
+  btn.addEventListener('click', () => setTimeout(loadIntegrations, 50));
+});
 
 // ── INIT ───────────────────────────────────────────────────────
 document.getElementById('chatMessages').innerHTML = welcomeHTML();

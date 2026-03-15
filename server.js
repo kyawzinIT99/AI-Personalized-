@@ -2413,6 +2413,72 @@ app.post('/api/telegram/webhook', (req, res) => {
   }
 });
 
+// ── INTEGRATIONS STATUS ──────────────────────────────────────────
+app.get('/api/integrations/status', (_req, res) => {
+  function cfgOk(file, key, placeholder) {
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
+      return c[key] && !String(c[key]).startsWith(placeholder || 'PASTE_');
+    } catch { return false; }
+  }
+
+  const tgCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'telegram.config.json'), 'utf8')); } catch { return {}; } })();
+  const lineCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'clawbot_line_config.json'), 'utf8')); } catch { return {}; } })();
+  const vbCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'viber.config.json'), 'utf8')); } catch { return {}; } })();
+  const slCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'slack.config.json'), 'utf8')); } catch { return {}; } })();
+  const ntCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'notion.config.json'), 'utf8')); } catch { return {}; } })();
+  const fbCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'facebook.config.json'), 'utf8')); } catch { return {}; } })();
+  const aiCfg   = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'openai.config.json'), 'utf8')); } catch { return {}; } })();
+
+  const googleOk = fs.existsSync(path.join(__dirname, 'google_user_token.json'));
+
+  res.json({
+    openai:    { ok: !!(aiCfg.apiKey && !aiCfg.apiKey.startsWith('your-')),   label: 'OpenAI GPT-4o',     icon: '🤖' },
+    telegram:  { ok: !!(tgCfg.botToken && !tgCfg.botToken.startsWith('your')), label: 'Telegram',          icon: '✈️' },
+    line:      { ok: !!(lineCfg.channel?.channel_access_token),                label: 'LINE',              icon: '💚' },
+    viber:     { ok: !!(vbCfg.authToken && !String(vbCfg.authToken).startsWith('PASTE_')), label: 'Viber', icon: '📱' },
+    slack:     { ok: !!(slCfg.botToken && !slCfg.botToken.startsWith('PASTE_')), label: 'Slack',           icon: '💬' },
+    notion:    { ok: !!(ntCfg.apiKey && !ntCfg.apiKey.startsWith('PASTE_')),   label: 'Notion',            icon: '📝' },
+    google:    { ok: googleOk,                                                  label: 'Google (Gmail/Drive/Calendar)', icon: '🔵' },
+    facebook:  { ok: !!(fbCfg.pageAccessToken && fbCfg.pageAccessToken.startsWith('EAA')), label: 'Facebook Messenger', icon: '📘' },
+  });
+});
+
+app.post('/api/integrations/test/:service', async (req, res) => {
+  const { service } = req.params;
+  try {
+    switch (service) {
+      case 'telegram': {
+        const cfg = loadTelegramConfig();
+        if (!cfg?.botToken) return res.json({ ok: false, error: 'Not configured' });
+        const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getMe`);
+        const d = await r.json();
+        return res.json(d.ok ? { ok: true, detail: `@${d.result.username}` } : { ok: false, error: d.description });
+      }
+      case 'slack': {
+        const d = await slackCall('auth.test', { method: 'GET' });
+        return res.json(d.ok ? { ok: true, detail: `${d.user} @ ${d.team}` } : { ok: false, error: d.error });
+      }
+      case 'notion': {
+        const notion = getNotionClient();
+        if (!notion) return res.json({ ok: false, error: 'Not configured' });
+        const u = await notion.users.me();
+        return res.json({ ok: true, detail: u.name || 'Connected' });
+      }
+      case 'google': {
+        const drive = getDriveClient();
+        if (!drive) return res.json({ ok: false, error: 'Not configured' });
+        const r = await drive.files.list({ pageSize: 1, fields: 'files(id)' });
+        return res.json({ ok: true, detail: 'Drive accessible' });
+      }
+      default:
+        return res.json({ ok: false, error: 'Unknown service' });
+    }
+  } catch (e) {
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/telegram/contacts', (_req, res) => res.json({ contacts: Object.values(tgContacts) }));
 
 // ── GOOGLE DRIVE FILE UPLOAD ─────────────────────────────────────
