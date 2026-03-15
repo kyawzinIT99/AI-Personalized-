@@ -8,6 +8,9 @@ import subprocess
 
 app = modal.App("clawbot")
 
+# Persistent volume — survives restarts and redeploys
+clawbot_volume = modal.Volume.from_name("clawbot-data", create_if_missing=True)
+
 PROJECT = "/Users/berry/Antigravity/Clawbot webiste"
 
 image = (
@@ -93,7 +96,7 @@ async def proxy(path: str, request: Request):
 
 
 # ── Modal function ─────────────────────────────────────────────
-@app.function(image=image, timeout=3600)
+@app.function(image=image, timeout=3600, volumes={"/data": clawbot_volume})
 @modal.concurrent(max_inputs=100)
 @modal.asgi_app()
 def serve():

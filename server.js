@@ -988,6 +988,14 @@ function loadTelegramConfig() {
   } catch (_) { return null; }
 }
 
+function loadSlackConfig() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'slack.config.json'), 'utf8'));
+    if (!cfg.botToken || cfg.botToken.startsWith('PASTE_')) return null;
+    return cfg;
+  } catch (_) { return null; }
+}
+
 const tgOutbox = [];
 
 function telegramPost(botToken, payload) {
@@ -1051,8 +1059,20 @@ app.post('/api/telegram/send', async (req, res) => {
 
 app.get('/api/telegram/outbox', (_req, res) => res.json({ outbox: tgOutbox }));
 
+// ── PERSISTENT STORAGE (Modal Volume at /data, local fallback) ──
+const DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, '.data');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const TG_CONTACTS_FILE = path.join(DATA_DIR, 'tg_contacts.json');
+
+function loadTgContactsFromDisk() {
+  try { return JSON.parse(fs.readFileSync(TG_CONTACTS_FILE, 'utf8')); } catch { return {}; }
+}
+function saveTgContactsToDisk() {
+  try { fs.writeFileSync(TG_CONTACTS_FILE, JSON.stringify(tgContacts, null, 2)); } catch {}
+}
+
 // ── TELEGRAM CONTACTS, WEBHOOK & AI AUTO-REPLY ─────────────────
-const tgContacts = {};       // chatId -> { chatId, name, username, addedAt, lastMsg }
+const tgContacts = loadTgContactsFromDisk(); // persistent across restarts
 const tgHistory  = {};       // chatId -> [ {role, content}, ... ]
 
 function loadOpenAIConfig() {
@@ -1333,6 +1353,20 @@ const CLAWBOT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'get_notion_tasks',
+      description: 'Read tasks from the Notion Weekly To-do List database',
+      parameters: {
+        type: 'object',
+        properties: {
+          filter: { type: 'string', description: 'Optional filter: "all", "done", "pending" (default: all)' }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_notion_task',
       description: 'Create a task or page in Notion via Zapier',
       parameters: {
@@ -1343,6 +1377,51 @@ const CLAWBOT_TOOLS = [
           due_date:    { type: 'string', description: 'Due date in YYYY-MM-DD format (optional)' }
         },
         required: ['title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rename_drive_file',
+      description: 'Rename a file or folder in Google Drive',
+      parameters: {
+        type: 'object',
+        properties: {
+          filename: { type: 'string', description: 'Current name of the file to rename' },
+          new_name: { type: 'string', description: 'New name for the file' }
+        },
+        required: ['filename', 'new_name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_slack_message',
+      description: 'Send a message to a Slack channel',
+      parameters: {
+        type: 'object',
+        properties: {
+          message:  { type: 'string', description: 'Message text to send' },
+          channel:  { type: 'string', description: 'Channel name or ID (optional, uses default if omitted)' }
+        },
+        required: ['message']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_slack_messages',
+      description: 'Read recent messages from a Slack channel',
+      parameters: {
+        type: 'object',
+        properties: {
+          channel: { type: 'string', description: 'Channel name or ID (optional, uses default if omitted)' },
+          limit:   { type: 'number', description: 'Number of messages to fetch (default 10)' }
+        },
+        required: []
       }
     }
   },
@@ -1847,6 +1926,75 @@ async function executeClawbotTool(toolName, args) {
         return { ok: true, location: label, count: files.length, files };
       }
 
+      case 'get_notion_tasks': {
+        const notion = getNotionClient();
+        if (!notion) return { ok: false, error: 'Notion not configured. Add API key to notion.config.json.' };
+        if (!notionCfg.databaseId) return { ok: false, error: 'Notion databaseId missing.' };
+        const filter = args.filter || 'all';
+        const queryOpts = { database_id: notionCfg.databaseId, page_size: 20 };
+        if (filter === 'done')    queryOpts.filter = { property: 'Done', checkbox: { equals: true } };
+        if (filter === 'pending') queryOpts.filter = { property: 'Done', checkbox: { equals: false } };
+        const res = await notion.databases.query(queryOpts);
+        const tasks = res.results.map(p => ({
+          id: p.id,
+          title: p.properties?.Name?.title?.[0]?.plain_text || p.properties?.Task?.title?.[0]?.plain_text || '(untitled)',
+          done:  p.properties?.Done?.checkbox || false,
+          due:   p.properties?.['Due Date']?.date?.start || '',
+          url:   p.url
+        }));
+        addLog(`📋 Notion tasks fetched: ${tasks.length}`, 'task');
+        return { ok: true, count: tasks.length, tasks };
+      }
+
+      case 'rename_drive_file': {
+        const drive = getDriveClient();
+        if (!drive) return { error: 'Google Drive not configured' };
+        const { filename, new_name } = args;
+        const found = await drive.files.list({
+          q: `name contains '${filename.replace(/'/g,"\\'")}' and trashed = false`,
+          fields: 'files(id,name)', pageSize: 5,
+          includeItemsFromAllDrives: true, supportsAllDrives: true, orderBy: 'modifiedTime desc'
+        });
+        const file = found.data.files?.[0];
+        if (!file) return { ok: false, error: `File "${filename}" not found in Drive` };
+        await drive.files.update({ fileId: file.id, requestBody: { name: new_name }, supportsAllDrives: true });
+        addLog(`✏️ Drive file renamed: "${file.name}" → "${new_name}"`, 'task');
+        return { ok: true, old_name: file.name, new_name };
+      }
+
+      case 'send_slack_message': {
+        const slackCfg = loadSlackConfig();
+        if (!slackCfg) return { ok: false, error: 'Slack not configured. Add token to slack.config.json.' };
+        const channelId = args.channel || slackCfg.defaultChannelId;
+        if (!channelId) return { ok: false, error: 'No channel specified and no defaultChannelId in slack.config.json.' };
+        const slackRes = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${slackCfg.botToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: channelId, text: args.message })
+        });
+        const slackData = await slackRes.json();
+        if (!slackData.ok) return { ok: false, error: slackData.error };
+        addLog(`💬 Slack message sent to ${channelId}`, 'task');
+        return { ok: true, channel: channelId, ts: slackData.ts };
+      }
+
+      case 'get_slack_messages': {
+        const slackCfg = loadSlackConfig();
+        if (!slackCfg) return { ok: false, error: 'Slack not configured.' };
+        const channelId = args.channel || slackCfg.defaultChannelId;
+        const limit = args.limit || 10;
+        const slackRes = await fetch(`https://slack.com/api/conversations.history?channel=${channelId}&limit=${limit}`, {
+          headers: { 'Authorization': `Bearer ${slackCfg.botToken}` }
+        });
+        const slackData = await slackRes.json();
+        if (!slackData.ok) return { ok: false, error: slackData.error };
+        const messages = slackData.messages.map(m => ({
+          text: m.text, ts: new Date(parseFloat(m.ts) * 1000).toISOString(), user: m.user || m.bot_id || 'unknown'
+        }));
+        addLog(`💬 Slack: fetched ${messages.length} messages`, 'task');
+        return { ok: true, channel: channelId, count: messages.length, messages };
+      }
+
       case 'create_notion_task': {
         const { title, description = '', due_date = '' } = args;
         const notion = getNotionClient();
@@ -2210,11 +2358,13 @@ app.post('/api/telegram/webhook', (req, res) => {
     tgContacts[chatId] = { chatId, name, username, addedAt: new Date().toISOString(), lastMsg: '' };
     addLog(`📱 Telegram: new contact — ${username || name} (${chatId})`, 'on');
     broadcast('tg_contact_added', tgContacts[chatId]);
+    saveTgContactsToDisk();
   }
 
   if (msg.text) {
     tgContacts[chatId].lastMsg  = msg.text.slice(0, 80);
     tgContacts[chatId].lastSeen = new Date().toISOString();
+    saveTgContactsToDisk();
     addLog(`📱 Telegram msg from ${username || name}: "${msg.text.slice(0, 60)}"`, 'task');
     broadcast('tg_message', { chatId, name, username, text: msg.text, ts: new Date().toISOString() });
 
