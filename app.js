@@ -494,6 +494,102 @@ function renderJobCard(job) {
     </div>`;
 }
 
+// ── RESUME / PORTFOLIO ──────────────────────────────────
+async function loadResumeStatus() {
+  try {
+    const res  = await apiFetch('/api/resume/profile');
+    const data = await res.json();
+    if (data.ok && data.profile) renderResumeProfile(data.profile);
+  } catch {}
+}
+
+function renderResumeProfile(profile) {
+  const panel    = document.getElementById('resumePanel');
+  const card     = document.getElementById('resumeProfileCard');
+  const status   = document.getElementById('resumeStatus');
+  const inputs   = document.getElementById('resumeInputs');
+  const clearBtn = document.getElementById('resumeClearBtn');
+
+  const skills = (profile.skills || []).slice(0, 10).map(s => `<span class="resume-skill-tag">${s}</span>`).join('');
+  card.innerHTML = `
+    <div class="resume-profile-name">${profile.name || 'Unknown'}</div>
+    <div>${profile.current_role || ''} · ${profile.years_experience || 0} yrs exp · ${profile.preferred_type || 'any'}</div>
+    ${profile.salary_expectation ? `<div>Expected: ${profile.salary_expectation}</div>` : ''}
+    ${skills ? `<div class="resume-skills-row">${skills}</div>` : ''}
+    ${profile.source ? `<div style="margin-top:6px;font-size:10px;opacity:.5">Source: ${profile.source}</div>` : ''}
+  `;
+  card.style.display     = 'block';
+  inputs.style.display   = 'none';
+  clearBtn.style.display = '';
+  status.textContent = 'Profile loaded — fit scores will use your resume';
+  panel.classList.add('loaded');
+}
+
+async function clearResumeProfile() {
+  await apiFetch('/api/resume/profile', { method: 'DELETE' });
+  document.getElementById('resumeProfileCard').style.display = 'none';
+  document.getElementById('resumeInputs').style.display      = '';
+  document.getElementById('resumeClearBtn').style.display    = 'none';
+  document.getElementById('resumeStatus').textContent        = 'No profile loaded — upload PDF or paste URL';
+  document.getElementById('resumePanel').classList.remove('loaded');
+}
+
+document.getElementById('resumeClearBtn')?.addEventListener('click', clearResumeProfile);
+
+document.getElementById('resumeUrlBtn')?.addEventListener('click', async () => {
+  const url = document.getElementById('resumeUrl')?.value?.trim();
+  if (!url) return;
+  const btn = document.getElementById('resumeUrlBtn');
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+  try {
+    const res  = await apiFetch('/api/resume/url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (data.ok) renderResumeProfile(data.profile);
+    else document.getElementById('resumeStatus').textContent = `Error: ${data.error}`;
+  } catch {
+    document.getElementById('resumeStatus').textContent = 'Failed to load URL';
+  } finally {
+    btn.textContent = 'Load URL';
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('resumeUploadBtn')?.addEventListener('click', () => {
+  document.getElementById('resumeFile')?.click();
+});
+
+document.getElementById('resumeFile')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const btn = document.getElementById('resumeUploadBtn');
+  btn.textContent = '⏳ Parsing PDF…';
+  btn.disabled = true;
+  const fd = new FormData();
+  fd.append('resume', file);
+  try {
+    const res  = await apiFetch('/api/resume/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) renderResumeProfile(data.profile);
+    else document.getElementById('resumeStatus').textContent = `Error: ${data.error}`;
+  } catch {
+    document.getElementById('resumeStatus').textContent = 'Upload failed';
+  } finally {
+    btn.textContent = '📎 Upload PDF Resume';
+    btn.disabled = false;
+    e.target.value = '';
+  }
+});
+
+// Load resume status when Jobs tab is opened
+document.querySelectorAll('[data-view="jobs"]').forEach(btn => {
+  btn.addEventListener('click', () => setTimeout(loadResumeStatus, 60));
+});
+
 async function runJobSearch() {
   const query = document.getElementById('jobQuery')?.value?.trim();
   if (!query) return;

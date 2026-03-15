@@ -186,6 +186,30 @@
           <h2>Job Search</h2>
           <span class="job-powered">via Firecrawl</span>
         </div>
+        <!-- Resume/Portfolio Section -->
+        <div class="resume-panel" id="resumePanel">
+          <div class="resume-header">
+            <span class="resume-icon">📄</span>
+            <div class="resume-header-text">
+              <div class="resume-title">Your Resume / Portfolio</div>
+              <div class="resume-sub" id="resumeStatus">No profile loaded — upload PDF or paste URL</div>
+            </div>
+            <button class="resume-clear-btn" id="resumeClearBtn" style="display:none" title="Remove profile">✕</button>
+          </div>
+          <div class="resume-inputs" id="resumeInputs">
+            <div class="resume-url-row">
+              <input type="text" id="resumeUrl" class="resume-url-input" placeholder="Portfolio URL e.g. https://yoursite.com/resume" />
+              <button id="resumeUrlBtn" class="resume-load-btn">Load URL</button>
+            </div>
+            <div class="resume-or">— or —</div>
+            <div class="resume-upload-row">
+              <input type="file" id="resumeFile" accept=".pdf" style="display:none" />
+              <button id="resumeUploadBtn" class="resume-upload-trigger">📎 Upload PDF Resume</button>
+            </div>
+          </div>
+          <div class="resume-profile-card" id="resumeProfileCard" style="display:none"></div>
+        </div>
+
         <div class="job-search-form">
           <div class="job-form-row">
             <input type="text" id="jobQuery" class="job-input" placeholder="e.g. Node.js developer, AI engineer, Network engineer…" />

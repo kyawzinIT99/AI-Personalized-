@@ -1130,7 +1130,29 @@ app.get('/api/telegram/outbox', (_req, res) => res.json({ outbox: tgOutbox }));
 // ── PERSISTENT STORAGE (Modal Volume at /data, local fallback) ──
 const DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, '.data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const TG_CONTACTS_FILE = path.join(DATA_DIR, 'tg_contacts.json');
+const TG_CONTACTS_FILE   = path.join(DATA_DIR, 'tg_contacts.json');
+const RESUME_PROFILE_FILE = path.join(DATA_DIR, 'resume_profile.json');
+
+function loadResumeProfile() {
+  try { return JSON.parse(fs.readFileSync(RESUME_PROFILE_FILE, 'utf8')); } catch { return null; }
+}
+
+async function extractResumeProfile(text, sourceLabel) {
+  const aiCfg = loadOpenAIConfig();
+  if (!aiCfg) return null;
+  const { OpenAI } = require('openai');
+  const oa = new OpenAI({ apiKey: aiCfg.apiKey });
+  const res = await oa.chat.completions.create({
+    model: aiCfg.model || 'gpt-4o',
+    messages: [{ role: 'user', content: `Extract a structured profile from this resume/portfolio. Return JSON only:\n{\n  "name": "",\n  "current_role": "",\n  "summary": "",\n  "skills": [],\n  "years_experience": 0,\n  "education": "",\n  "languages": [],\n  "salary_expectation": "",\n  "preferred_type": "remote|permanent|both",\n  "source": "${sourceLabel}"\n}\n\nResume text:\n${text.slice(0, 4000)}` }],
+    temperature: 0.1
+  });
+  const txt = res.choices[0].message.content.trim();
+  try {
+    const start = txt.indexOf('{');
+    return JSON.parse(start >= 0 ? txt.slice(start) : txt);
+  } catch { return null; }
+}
 
 function loadTgContactsFromDisk() {
   try { return JSON.parse(fs.readFileSync(TG_CONTACTS_FILE, 'utf8')); } catch { return {}; }
@@ -1682,6 +1704,28 @@ const CLAWBOT_TOOLS = [
         required: ['id']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_resume_profile',
+      description: 'Get the stored resume/portfolio profile that was previously uploaded or linked',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'upload_resume_url',
+      description: 'Load resume or portfolio from a URL — scrapes and extracts structured profile for job matching',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Full URL to the resume or portfolio page' }
+        },
+        required: ['url']
+      }
+    }
   }
 ];
 
@@ -2193,9 +2237,13 @@ async function executeClawbotTool(toolName, args) {
           if (!rawResults.length) return { ok: true, jobs: [], message: 'No results from Firecrawl' };
 
           const oa = new OpenAI({ apiKey: aiCfg.apiKey });
+          const resumeProfile = loadResumeProfile();
+          const resumeCtx = resumeProfile
+            ? `CANDIDATE PROFILE:\nName: ${resumeProfile.name}\nRole: ${resumeProfile.current_role}\nSkills: ${(resumeProfile.skills || []).join(', ')}\nExp: ${resumeProfile.years_experience} yrs\nPreferred: ${resumeProfile.preferred_type}\nSalary: ${resumeProfile.salary_expectation}`
+            : `Search: "${query}"`;
           const gptRes = await oa.chat.completions.create({
             model: aiCfg.model || 'gpt-4o',
-            messages: [{ role: 'user', content: `Extract job data and score (0-100 fit for "${query}") from:\n${rawResults.slice(0,8).map((r,i)=>`JOB ${i+1} [${r._platform}]\nURL:${r.url}\n${(r.markdown||r.description||'').slice(0,600)}`).join('\n\n')}\n\nReturn JSON array: [{title,company,salary,location,type,platform,tech_stack,contact,apply_url,fit_score,summary}]. JSON only.` }],
+            messages: [{ role: 'user', content: `Extract job data and calculate fit score (0-100) based on candidate match.\n\n${resumeCtx}\n\nJobs:\n${rawResults.slice(0,8).map((r,i)=>`JOB ${i+1} [${r._platform}]\nURL:${r.url}\n${(r.markdown||r.description||'').slice(0,600)}`).join('\n\n')}\n\nReturn JSON array: [{title,company,salary,location,type,platform,tech_stack,contact,apply_url,fit_score,summary}]. JSON only.` }],
             temperature: 0.2
           });
           const txt = gptRes.choices[0].message.content.trim();
@@ -2204,6 +2252,38 @@ async function executeClawbotTool(toolName, args) {
           jobs.sort((a,b) => (b.fit_score||0)-(a.fit_score||0));
           addLog(`🔍 Job search: "${query}" → ${jobs.length} results`, 'task');
           return { ok: true, count: jobs.length, jobs: jobs.slice(0, limit) };
+        } catch (e) { return { ok: false, error: e.message }; }
+      }
+
+      case 'get_resume_profile': {
+        const profile = loadResumeProfile();
+        if (!profile) return { ok: false, error: 'No resume uploaded yet. Upload a PDF or link a portfolio URL first.' };
+        return { ok: true, profile };
+      }
+
+      case 'upload_resume_url': {
+        const { url } = args;
+        const fcKey = getFirecrawlKey();
+        try {
+          let text = '';
+          if (fcKey) {
+            const fcRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${fcKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url, formats: ['markdown'] })
+            });
+            const fcData = await fcRes.json();
+            text = fcData.data?.markdown || '';
+          } else {
+            const r = await fetch(url);
+            text = (await r.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          }
+          if (!text) return { ok: false, error: 'Could not fetch URL content' };
+          const profile = await extractResumeProfile(text, url);
+          if (!profile) return { ok: false, error: 'Could not extract profile from URL' };
+          fs.writeFileSync(RESUME_PROFILE_FILE, JSON.stringify(profile, null, 2));
+          addLog(`📄 Resume loaded from URL: ${profile.name}`, 'task');
+          return { ok: true, profile };
         } catch (e) { return { ok: false, error: e.message }; }
       }
 
@@ -3382,13 +3462,20 @@ app.post('/api/jobs/search', async (req, res) => {
 
     const openai = new OpenAI({ apiKey: aiCfg.apiKey });
 
-    const extractPrompt = `You are a job data extractor. For each job listing below, extract structured info and calculate a technical fit score (0–100) based on how well it matches the user's search: "${query}".
+    const resumeProfile = loadResumeProfile();
+    const resumeContext = resumeProfile
+      ? `CANDIDATE PROFILE (use this for fit scoring):\nName: ${resumeProfile.name}\nCurrent role: ${resumeProfile.current_role}\nSkills: ${(resumeProfile.skills || []).join(', ')}\nExperience: ${resumeProfile.years_experience} years\nPreferred type: ${resumeProfile.preferred_type}\nSalary expectation: ${resumeProfile.salary_expectation}\nLanguages: ${(resumeProfile.languages || []).join(', ')}`
+      : `Search query: "${query}"`;
 
-Fit score criteria:
-- Technical skills match (40 pts)
-- Job type match: user wants ${jobType} (20 pts)
-- Salary mentioned and reasonable (20 pts)
-- Clear contact/apply info available (20 pts)
+    const extractPrompt = `You are a job data extractor and career advisor. For each job listing, extract structured info and calculate a technical fit score (0–100) based on the candidate's match.
+
+${resumeContext}
+
+Fit score criteria (use candidate profile if available, else use search query):
+- Technical skills overlap (40 pts)
+- Job type match: ${resumeProfile?.preferred_type || jobType} (20 pts)
+- Salary alignment with expectation: ${resumeProfile?.salary_expectation || 'any'} (20 pts)
+- Clear apply path / contact available (20 pts)
 
 Job listings:
 ${rawResults.slice(0, limit + 2).map((r, i) => `--- JOB ${i + 1} (${r._platform}) ---\nURL: ${r.url}\nTitle: ${r.title || ''}\n${(r.markdown || r.description || '').slice(0, 800)}`).join('\n\n')}
@@ -3431,6 +3518,63 @@ Return ONLY valid JSON array, no markdown.`;
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// ── RESUME / PORTFOLIO ────────────────────────────────────────
+app.get('/api/resume/profile', (_req, res) => {
+  const profile = loadResumeProfile();
+  res.json({ ok: !!profile, profile });
+});
+
+app.post('/api/resume/url', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ ok: false, error: 'url required' });
+  const fcKey = getFirecrawlKey();
+  try {
+    let text = '';
+    if (fcKey) {
+      const fcRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${fcKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, formats: ['markdown'] })
+      });
+      const fcData = await fcRes.json();
+      text = fcData.data?.markdown || fcData.data?.content || '';
+    } else {
+      const r = await fetch(url);
+      text = await r.text();
+      text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    if (!text) return res.json({ ok: false, error: 'Could not fetch content from URL' });
+    const profile = await extractResumeProfile(text, url);
+    if (!profile) return res.json({ ok: false, error: 'Could not extract resume data' });
+    fs.writeFileSync(RESUME_PROFILE_FILE, JSON.stringify(profile, null, 2));
+    addLog(`📄 Resume loaded from URL: ${profile.name || 'unknown'}`, 'task');
+    res.json({ ok: true, profile });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/resume/upload', upload.single('resume'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: 'No file received' });
+  try {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(req.file.buffer);
+    const text = data.text;
+    const profile = await extractResumeProfile(text, req.file.originalname);
+    if (!profile) return res.json({ ok: false, error: 'Could not extract resume data from PDF' });
+    fs.writeFileSync(RESUME_PROFILE_FILE, JSON.stringify(profile, null, 2));
+    addLog(`📄 Resume uploaded: ${profile.name || req.file.originalname}`, 'task');
+    res.json({ ok: true, profile });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/resume/profile', (_req, res) => {
+  try { fs.unlinkSync(RESUME_PROFILE_FILE); } catch {}
+  res.json({ ok: true });
 });
 
 // ── WEBSOCKET ──────────────────────────────────────────────────
