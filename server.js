@@ -3577,7 +3577,140 @@ app.delete('/api/resume/profile', (_req, res) => {
   res.json({ ok: true });
 });
 
-// ── WEBSOCKET ──────────────────────────────────────────────────
+// ── JOB APPLY ─────────────────────────────────────────────────
+app.post('/api/jobs/apply', async (req, res) => {
+  const { job, hint = '' } = req.body;
+  if (!job || !job.title) return res.status(400).json({ ok: false, error: 'job data required' });
+
+  const aiCfg = loadOpenAIConfig();
+  if (!aiCfg) return res.status(503).json({ ok: false, error: 'OpenAI not configured' });
+
+  const resumeProfile = loadResumeProfile();
+  const profileText = resumeProfile
+    ? `Applicant: ${resumeProfile.name}\nRole: ${resumeProfile.current_role}\nExperience: ${resumeProfile.years_experience} yrs\nSkills: ${(resumeProfile.skills || []).join(', ')}\nEducation: ${resumeProfile.education || ''}\nSalary: ${resumeProfile.salary_expectation || 'negotiable'}`
+    : 'No resume profile loaded — write a general professional cover letter.';
+
+  try {
+    const { OpenAI } = require('openai');
+    const oa = new OpenAI({ apiKey: aiCfg.apiKey });
+    const gptRes = await oa.chat.completions.create({
+      model: aiCfg.model || 'gpt-4o',
+      messages: [{
+        role: 'user',
+        content: `Write a concise, professional cover letter (max 220 words) for this job application.\n\nJOB:\nTitle: ${job.title}\nCompany: ${job.company || 'the company'}\nType: ${job.type || ''}\nTech stack: ${(job.tech_stack || []).join(', ')}\nSummary: ${job.summary || ''}\n\nAPPLICANT PROFILE:\n${profileText}\n\nExtra note from applicant: ${hint || 'none'}\n\nWrite ONLY the cover letter body text. No subject line. No greetings/sign-off template — just start with "Dear Hiring Team," and end with a professional closing. Keep it sharp and tailored.`
+      }],
+      temperature: 0.7
+    });
+
+    const coverLetter = gptRes.choices[0].message.content.trim();
+
+    // If job has email contact, attempt to send application email
+    let sent = false;
+    let sendError = '';
+    const emailContact = job.contact && job.contact.includes('@') ? job.contact : null;
+
+    if (emailContact) {
+      try {
+        const emailCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'email.config.json'), 'utf8')); } catch { return null; } })();
+        if (emailCfg?.user && emailCfg?.pass) {
+          const nodemailer = require('nodemailer');
+          const transport = nodemailer.createTransport({
+            host: emailCfg.smtp || 'smtp.gmail.com',
+            port: emailCfg.smtpPort || 587,
+            secure: false,
+            auth: { user: emailCfg.user, pass: emailCfg.pass }
+          });
+          await transport.sendMail({
+            from: `"${resumeProfile?.name || 'Applicant'}" <${emailCfg.user}>`,
+            to: emailContact,
+            subject: `Application for ${job.title}${job.company ? ' at ' + job.company : ''}`,
+            text: coverLetter
+          });
+          sent = true;
+          addLog(`📨 Job application sent: "${job.title}" → ${emailContact}`, 'task');
+        }
+      } catch (e) { sendError = e.message; }
+    }
+
+    res.json({ ok: true, coverLetter, sent, emailContact, sendError, applyUrl: job.apply_url || null });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── JOB SHARE ─────────────────────────────────────────────────
+app.post('/api/jobs/share', async (req, res) => {
+  const { job, to } = req.body;
+  if (!job || !to) return res.status(400).json({ ok: false, error: 'job and to required' });
+
+  try {
+    const emailCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'email.config.json'), 'utf8')); } catch { return null; } })();
+    if (!emailCfg?.user || !emailCfg?.pass) return res.status(503).json({ ok: false, error: 'Gmail not configured' });
+
+    const nodemailer = require('nodemailer');
+    const transport = nodemailer.createTransport({
+      host: emailCfg.smtp || 'smtp.gmail.com',
+      port: emailCfg.smtpPort || 587,
+      secure: false,
+      auth: { user: emailCfg.user, pass: emailCfg.pass }
+    });
+
+    const techTags = (job.tech_stack || []).map(t => `<span style="display:inline-block;padding:2px 8px;margin:2px;background:#1e1e2e;border:1px solid #3f3f5a;border-radius:4px;font-size:12px;color:#a5b4fc;">${t}</span>`).join('');
+
+    const htmlBody = `
+<div style="font-family:Inter,sans-serif;max-width:580px;margin:0 auto;background:#0d0d0f;color:#e5e7eb;padding:28px;border-radius:12px;border:1px solid #2a2a3a;">
+  <div style="font-size:11px;color:#6b7280;margin-bottom:16px;letter-spacing:.05em;">JOB OPPORTUNITY · CLAWBOT</div>
+  <h1 style="font-size:20px;font-weight:700;color:#f9fafb;margin:0 0 4px;">${job.title || 'Job Opening'}</h1>
+  <div style="font-size:14px;color:#9ca3af;margin-bottom:20px;">${job.company || ''} ${job.location ? '· ' + job.location : ''}</div>
+
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+    <tr>
+      <td style="padding:8px 12px;background:#111827;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;width:35%;">Type</td>
+      <td style="padding:8px 12px;background:#111827;border-radius:0 8px 8px 0;font-size:13px;color:#e5e7eb;">${job.type || '—'}</td>
+    </tr>
+    <tr><td colspan="2" style="height:4px;"></td></tr>
+    <tr>
+      <td style="padding:8px 12px;background:#111827;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Salary</td>
+      <td style="padding:8px 12px;background:#111827;border-radius:0 8px 8px 0;font-size:13px;color:#4ade80;font-weight:600;">${job.salary || 'Not specified'}</td>
+    </tr>
+    <tr><td colspan="2" style="height:4px;"></td></tr>
+    <tr>
+      <td style="padding:8px 12px;background:#111827;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Platform</td>
+      <td style="padding:8px 12px;background:#111827;border-radius:0 8px 8px 0;font-size:13px;color:#e5e7eb;">${job.platform || '—'}</td>
+    </tr>
+    <tr><td colspan="2" style="height:4px;"></td></tr>
+    <tr>
+      <td style="padding:8px 12px;background:#111827;border-radius:8px 0 0 8px;font-size:12px;color:#6b7280;">Fit Score</td>
+      <td style="padding:8px 12px;background:#111827;border-radius:0 8px 8px 0;font-size:13px;color:#818cf8;font-weight:700;">${job.fit_score || '—'}/100</td>
+    </tr>
+  </table>
+
+  ${job.summary ? `<p style="font-size:13px;color:#9ca3af;line-height:1.6;margin-bottom:18px;">${job.summary}</p>` : ''}
+
+  ${techTags ? `<div style="margin-bottom:20px;">${techTags}</div>` : ''}
+
+  ${job.contact && job.contact !== 'Apply via link' ? `<p style="font-size:12px;color:#6b7280;">Contact: ${job.contact}</p>` : ''}
+
+  ${job.apply_url ? `<a href="${job.apply_url}" style="display:inline-block;background:#6366f1;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Apply Now →</a>` : ''}
+
+  <p style="font-size:11px;color:#374151;margin-top:28px;">Shared via Clawbot · itsolutions.mm</p>
+</div>`;
+
+    await transport.sendMail({
+      from: `"Clawbot 🦞" <${emailCfg.user}>`,
+      to,
+      subject: `Job: ${job.title}${job.company ? ' at ' + job.company : ''} (${job.type || 'Open'} · ${job.salary || 'Salary TBD'})`,
+      html: htmlBody
+    });
+
+    addLog(`📧 Job shared: "${job.title}" → ${to}`, 'task');
+    res.json({ ok: true, to });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── WEBSOCKET ─────────────────��────────────────────────────────
 wss.on('connection', (ws) => {
   try { ws.send(JSON.stringify({ type: 'init', payload: state })); } catch (_) {}
   ws.on('error', () => {});

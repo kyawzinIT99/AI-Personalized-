@@ -465,13 +465,14 @@ function scoreClass(s) {
   return 'low';
 }
 
-function renderJobCard(job) {
+function renderJobCard(job, idx) {
   const score = job.fit_score || 0;
   const typeClass = (job.type || '').toLowerCase().includes('remote') ? 'remote' : 'onsite';
   const platClass = (job.platform || '').toLowerCase();
   const tags = (job.tech_stack || []).slice(0, 6).map(t => `<span class="job-tag">${t}</span>`).join('');
+  const cardId = `job-card-${idx}`;
   return `
-    <div class="job-card">
+    <div class="job-card" id="${cardId}">
       <div class="job-card-top">
         <div class="job-title">${job.title || 'Untitled'}</div>
         <span class="job-score ${scoreClass(score)}">${score}/100</span>
@@ -489,9 +490,129 @@ function renderJobCard(job) {
           <div class="job-salary">${job.salary || 'Salary not specified'}</div>
           ${job.contact && job.contact !== 'Apply via link' ? `<div class="job-contact">Contact: ${job.contact}</div>` : ''}
         </div>
-        ${job.apply_url ? `<a class="job-apply-btn" href="${job.apply_url}" target="_blank" rel="noopener">Apply →</a>` : ''}
+        <div class="job-actions">
+          <button class="job-action-btn apply-btn" onclick="toggleApplyPanel('${cardId}', ${idx})">📝 Apply</button>
+          <button class="job-action-btn share-btn" onclick="toggleSharePanel('${cardId}', ${idx})">📧 Share</button>
+          ${job.apply_url ? `<a class="job-apply-btn" href="${job.apply_url}" target="_blank" rel="noopener">Open →</a>` : ''}
+        </div>
+      </div>
+
+      <!-- Apply panel (hidden by default) -->
+      <div class="job-panel apply-panel" id="${cardId}-apply" style="display:none">
+        <div class="panel-label">📝 Cover Letter</div>
+        <div class="panel-hint-row">
+          <input type="text" class="panel-hint-input" id="${cardId}-hint" placeholder="Optional note to add (e.g. 'mention AWS experience')" />
+          <button class="panel-gen-btn" onclick="generateApply('${cardId}', ${idx})">Generate</button>
+        </div>
+        <div class="panel-cover-letter" id="${cardId}-cover" style="display:none"></div>
+        <div class="panel-apply-actions" id="${cardId}-apply-actions" style="display:none"></div>
+      </div>
+
+      <!-- Share panel (hidden by default) -->
+      <div class="job-panel share-panel" id="${cardId}-share" style="display:none">
+        <div class="panel-label">📧 Share via Gmail</div>
+        <div class="panel-share-row">
+          <input type="email" class="panel-share-input" id="${cardId}-shareto" placeholder="recipient@email.com" />
+          <button class="panel-send-btn" onclick="sendShareEmail('${cardId}', ${idx})">Send</button>
+        </div>
+        <div class="panel-share-status" id="${cardId}-share-status"></div>
       </div>
     </div>`;
+}
+
+// Store job data for apply/share actions
+let _jobCache = [];
+
+function toggleApplyPanel(cardId, _idx) {
+  const panel = document.getElementById(`${cardId}-apply`);
+  const sharePanel = document.getElementById(`${cardId}-share`);
+  if (sharePanel) sharePanel.style.display = 'none';
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleSharePanel(cardId, _idx) {
+  const panel = document.getElementById(`${cardId}-share`);
+  const applyPanel = document.getElementById(`${cardId}-apply`);
+  if (applyPanel) applyPanel.style.display = 'none';
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  // Pre-fill with user's email from config (try to get from status)
+  panel.style.display = 'block';
+}
+
+async function generateApply(cardId, idx) {
+  const job = _jobCache[idx];
+  if (!job) return;
+  const hint = document.getElementById(`${cardId}-hint`)?.value || '';
+  const coverEl = document.getElementById(`${cardId}-cover`);
+  const actionsEl = document.getElementById(`${cardId}-apply-actions`);
+  const btn = document.querySelector(`#${cardId}-apply .panel-gen-btn`);
+
+  btn.textContent = 'Generating…';
+  btn.disabled = true;
+  coverEl.style.display = 'none';
+  actionsEl.style.display = 'none';
+
+  try {
+    const res = await apiFetch('/api/jobs/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job, hint })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      coverEl.style.display = 'block';
+      coverEl.textContent = `Error: ${data.error}`;
+      return;
+    }
+    coverEl.style.display = 'block';
+    coverEl.textContent = data.coverLetter;
+
+    // Build action buttons
+    let actionHtml = `<button class="panel-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('${cardId}-cover').textContent).then(()=>this.textContent='✓ Copied!')">Copy Letter</button>`;
+    if (data.sent) {
+      actionHtml += `<span class="panel-sent-badge">✓ Application sent to ${data.emailContact}</span>`;
+    } else if (data.emailContact) {
+      actionHtml += `<span class="panel-err-badge">⚠️ Could not send: ${data.sendError || 'email not configured'}</span>`;
+    }
+    if (data.applyUrl) {
+      actionHtml += `<a class="job-apply-btn" href="${data.applyUrl}" target="_blank" rel="noopener">Apply on site →</a>`;
+    }
+    actionsEl.innerHTML = actionHtml;
+    actionsEl.style.display = 'flex';
+  } catch (e) {
+    coverEl.style.display = 'block';
+    coverEl.textContent = 'Request failed';
+  } finally {
+    btn.textContent = 'Regenerate';
+    btn.disabled = false;
+  }
+}
+
+async function sendShareEmail(cardId, idx) {
+  const job = _jobCache[idx];
+  if (!job) return;
+  const to = document.getElementById(`${cardId}-shareto`)?.value?.trim();
+  if (!to) { document.getElementById(`${cardId}-share-status`).textContent = 'Enter a recipient email'; return; }
+  const statusEl = document.getElementById(`${cardId}-share-status`);
+  const btn = document.querySelector(`#${cardId}-share .panel-send-btn`);
+  btn.textContent = 'Sending…';
+  btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/jobs/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job, to })
+    });
+    const data = await res.json();
+    statusEl.textContent = data.ok ? `✓ Sent to ${to}` : `✗ ${data.error}`;
+    statusEl.style.color = data.ok ? '#4ade80' : '#f87171';
+  } catch {
+    statusEl.textContent = '✗ Send failed';
+    statusEl.style.color = '#f87171';
+  } finally {
+    btn.textContent = 'Send';
+    btn.disabled = false;
+  }
 }
 
 // ── RESUME / PORTFOLIO ──────────────────────────────────
